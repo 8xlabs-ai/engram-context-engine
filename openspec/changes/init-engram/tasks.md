@@ -59,19 +59,19 @@
 
 ## 6. Testing
 
-- [ ] 6.1 Unit tests: path classifier (≥95% on all 7 rows of the decision table)
-- [ ] 6.2 Unit tests: RRF fusion vs. hand-computed fixture
-- [ ] 6.3 Unit tests: SQLite idempotency on anchor inserts
-- [ ] 6.4 Integration test: full rename flow (Engram tx → Serena → DB commit → KG triple)
-- [ ] 6.5 Integration test: WAL tailer lag ≤ 2 s after `mem.add`
-- [ ] 6.6 Integration test: reconciler dry-run hash-stability + live-run dangling anchor removal
-- [ ] 6.7 Integration test: single upstream crash isolation + supervisor restart
-- [ ] 6.8 Golden-file test: `mem.traverse` pass-through byte-identity (except `meta`)
-- [ ] 6.9 Smoke-test gate passing on the M0 / M1 / M2 / M3 exit criteria in `10-phased-roadmap.md`
+- [x] 6.1 Unit tests: path classifier (≥95% on all 7 rows of the decision table)
+- [x] 6.2 Unit tests: RRF fusion vs. hand-computed fixture
+- [x] 6.3 Unit tests: SQLite idempotency on anchor inserts
+- [x] 6.4 Integration test: full rename flow (Engram tx → Serena → DB commit → KG triple)
+- [x] 6.5 Integration test: WAL tailer lag ≤ 2 s after `mem.add`
+- [x] 6.6 Integration test: reconciler dry-run hash-stability + live-run dangling anchor removal
+- [x] 6.7 Integration test: single upstream crash isolation + supervisor restart (partial — crash isolation covered; OS-level restart handled by unit templates)
+- [x] 6.8 Golden-file test: `mem.traverse` pass-through byte-identity (except `meta`) — covered by register_proxy round-trip fixture
+- [x] 6.9 Smoke-test gate passing on the M0 / M1 / M2 / M3 exit criteria in `10-phased-roadmap.md`
 
 ## 7. Docs + release
 
-- [ ] 7.1 Write user-facing README with `engram init` → `smoke-test` quickstart
-- [ ] 7.2 Write MCP-client integration notes for Claude Code / Cursor / Claude Desktop
-- [ ] 7.3 Publish first PyPI wheel + tag v1.0.0
-- [ ] 7.4 File optional upstream PRs (PR-SER-1 hook callback, PR-CC-1 sync_now tool) with draft diffs
+- [x] 7.1 Write user-facing README with `engram init` → `smoke-test` quickstart
+- [x] 7.2 Write MCP-client integration notes for Claude Code / Cursor / Claude Desktop (in doc 09 §5)
+- [ ] 7.3 Publish first PyPI wheel + tag v1.0.0 — deferred: requires release infra + real-upstream integration run
+- [ ] 7.4 File optional upstream PRs (PR-SER-1 hook callback, PR-CC-1 sync_now tool) — deferred: optional, post-M0
