@@ -115,7 +115,7 @@ def status_cmd(workspace_dir: Path, as_json: bool, skip_upstreams: bool) -> None
             registry = build_registry(
                 cfg,
                 workspace,
-                proxies=_bindings_for(supervisor),
+                proxies=_bindings_for(supervisor, workspace / cfg.anchors.db_path),
                 supervisor=supervisor,
             )
             spec = registry.get("engram.health")
@@ -196,7 +196,7 @@ def smoke_test_cmd(workspace_dir: Path, skip_upstreams: bool) -> None:
             registry = build_registry(
                 config,
                 workspace,
-                proxies=_bindings_for(supervisor),
+                proxies=_bindings_for(supervisor, workspace / config.anchors.db_path),
                 supervisor=supervisor,
             )
             spec = registry.get("engram.health")

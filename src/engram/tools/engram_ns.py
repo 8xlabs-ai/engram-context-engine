@@ -22,6 +22,7 @@ from engram.tools.envelope import failure, latency_meter, success
 from engram.tools.registry import ToolRegistry, ToolSpec
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor
+from engram.workers.wal_tailer import wal_lag_seconds
 
 log = logging.getLogger("engram.tools")
 
@@ -92,6 +93,9 @@ def _register_health(
     async def health_handler(_args: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
             upstreams = await _probe_all(supervisor)
+            lag = wal_lag_seconds(anchor_db_path)
+            if lag is not None and "mempalace" in upstreams:
+                upstreams["mempalace"]["wal_lag_seconds"] = lag
             status = _roll_up_status(upstreams)
             result: dict[str, Any] = {
                 "status": status,

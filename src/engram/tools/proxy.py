@@ -32,16 +32,22 @@ def register_proxy(
     namespace: str,
     shortener: NameShortener = identity,
     default_path_tag: str | None = None,
+    interceptors: dict[str, Any] | None = None,
 ) -> int:
     """Register every tool on `client` under `namespace.<shortened_name>`.
 
+    `interceptors` is an optional mapping of *upstream* tool name → a
+    pre-constructed ToolHandler that replaces the generic proxy handler.
+    Used to attach the Link-Layer rename / safe-delete write paths.
+
     Returns the number of tools registered.
     """
+    interceptors = interceptors or {}
     registered = 0
     for tool in client.tools:
         short_name = shortener(tool.name)
         fq_name = f"{namespace}.{short_name}"
-        handler = _make_handler(
+        handler = interceptors.get(tool.name) or _make_handler(
             client=client,
             upstream_name=tool.name,
             proxy_name=fq_name,

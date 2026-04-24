@@ -16,8 +16,14 @@ from mcp.server.stdio import stdio_server
 from engram.config import Config
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.envelope import failure
+from engram.tools.mem_add_anchor import (
+    MEM_ADD_DESCRIPTION,
+    MEM_ADD_INPUT_SCHEMA,
+    make_mem_add_handler,
+)
 from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy
 from engram.tools.registry import ToolRegistry, ToolSpec
+from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor, specs_from_config
 
@@ -32,6 +38,7 @@ class ProxyBinding:
     namespace: str
     shortener: Any  # Callable[[str], str]
     default_path_tag: str | None
+    interceptors: dict[str, Any] | None = None
 
 
 def build_registry(
@@ -50,6 +57,7 @@ def build_registry(
             namespace=binding.namespace,
             shortener=binding.shortener,
             default_path_tag=binding.default_path_tag,
+            interceptors=binding.interceptors,
         )
     return registry
 
@@ -104,14 +112,27 @@ def load_config(workspace: Path) -> Config:
     return Config.load(config_path)
 
 
-def _bindings_for(supervisor: Supervisor) -> list[ProxyBinding]:
+def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBinding]:
     bindings: list[ProxyBinding] = []
     serena = supervisor.get("serena")
     if serena is not None:
-        bindings.append(ProxyBinding(serena, "code", identity, "B"))
+        interceptors = {
+            "rename_symbol": make_rename_interceptor(
+                anchor_db_path, serena, lambda: supervisor.get("mempalace")
+            ),
+            "safe_delete_symbol": make_safe_delete_interceptor(
+                anchor_db_path, serena, lambda: supervisor.get("mempalace")
+            ),
+        }
+        bindings.append(ProxyBinding(serena, "code", identity, "B", interceptors))
     mempalace = supervisor.get("mempalace")
     if mempalace is not None:
-        bindings.append(ProxyBinding(mempalace, "mem", drop_mempalace_prefix, None))
+        mem_interceptors = {
+            "mempalace_add_drawer": make_mem_add_handler(anchor_db_path, mempalace),
+        }
+        bindings.append(
+            ProxyBinding(mempalace, "mem", drop_mempalace_prefix, None, mem_interceptors)
+        )
     claude_context = supervisor.get("claude_context")
     if claude_context is not None:
         bindings.append(ProxyBinding(claude_context, "vec", identity, "A"))
@@ -125,7 +146,7 @@ async def _run(workspace: Path, enable_upstreams: bool) -> None:
         registry = build_registry(
             config,
             workspace,
-            proxies=_bindings_for(supervisor),
+            proxies=_bindings_for(supervisor, workspace / config.anchors.db_path),
             supervisor=supervisor,
         )
         server = build_server(registry)
