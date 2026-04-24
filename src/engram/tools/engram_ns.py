@@ -19,10 +19,12 @@ from engram.link.store import (
     upsert_symbol,
 )
 from engram.router.classifier import classify_query
+from engram.tools.contradicts import register_contradicts
 from engram.tools.envelope import failure, latency_meter, success
 from engram.tools.registry import ToolRegistry, ToolSpec
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor
+from engram.workers.reconciler import reconcile as run_reconcile
 from engram.workers.wal_tailer import wal_lag_seconds
 
 log = logging.getLogger("engram.tools")
@@ -52,6 +54,16 @@ WHY_DESCRIPTION = (
     "Prefer this over code.find_symbol when the question is *why*, not *where*."
 )
 
+WHERE_DECISION_DESCRIPTION = (
+    "Find every place a KG-recorded decision is implemented in the code.\n"
+    "Use when you have a decision entity and need to see what code honors it."
+)
+
+RECONCILE_DESCRIPTION = (
+    "Sweep the anchor store to repair stale rows (dead drawers, tombstoned symbols).\n"
+    "Use when engram.health reports a large anchor_store age or after a manual cleanup."
+)
+
 # Lightweight probes per upstream — each is a tool on the upstream that returns
 # fast and does not mutate state. Picked from docs 01–03.
 PROBE_TOOL = {
@@ -65,6 +77,7 @@ DrawerLookup = Callable[[str], Awaitable[dict[str, Any] | None]]
 SymbolLookup = Callable[[str, str], Awaitable[dict[str, Any] | None]]
 MemSearch = Callable[[str], Awaitable[list[dict[str, Any]]]]
 KgQuery = Callable[[str], Awaitable[list[dict[str, Any]]]]
+VecSearch = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
 
 
 def register_engram_tools(
@@ -75,17 +88,19 @@ def register_engram_tools(
     symbol_lookup: SymbolLookup | None = None,
     mem_search: MemSearch | None = None,
     kg_query: KgQuery | None = None,
+    vec_search: VecSearch | None = None,
 ) -> None:
     """Register all engram.* tools.
 
-    `drawer_lookup`, `symbol_lookup`, `mem_search`, and `kg_query` are override
-    hooks used by tests; in production the closures derived from `supervisor`
-    are used.
+    `drawer_lookup`, `symbol_lookup`, `mem_search`, `kg_query`, and `vec_search`
+    are override hooks used by tests; in production the closures derived from
+    `supervisor` are used.
     """
     drawer_lookup = drawer_lookup or _default_drawer_lookup(supervisor)
     symbol_lookup = symbol_lookup or _default_symbol_lookup(supervisor)
     mem_search = mem_search or _default_mem_search(supervisor)
     kg_query = kg_query or _default_kg_query(supervisor)
+    vec_search = vec_search or _default_vec_search(supervisor)
 
     _register_health(registry, anchor_db_path, supervisor)
     _register_anchor_memory_to_symbol(
@@ -100,6 +115,14 @@ def register_engram_tools(
         mem_search=mem_search,
         kg_query=kg_query,
     )
+    _register_where_does_decision_apply(
+        registry,
+        kg_query=kg_query,
+        vec_search=vec_search,
+        symbol_lookup=symbol_lookup,
+    )
+    _register_reconcile(registry, anchor_db_path, drawer_lookup)
+    register_contradicts(registry)
 
 
 # -----------------------------------------------------------------------------
@@ -458,6 +481,152 @@ def _register_why(
 
 
 # -----------------------------------------------------------------------------
+# engram.reconcile
+# -----------------------------------------------------------------------------
+
+
+def _register_reconcile(
+    registry: ToolRegistry, anchor_db_path: Path, drawer_lookup: DrawerLookup
+) -> None:
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        with latency_meter() as m:
+            scope = str(args.get("scope", "all"))
+            dry_run = bool(args.get("dry_run", False))
+            if scope not in ("symbols", "chunks", "memories", "all"):
+                return failure(
+                    "invalid-input",
+                    f"scope must be one of symbols/chunks/memories/all, got {scope!r}",
+                    meta_extra={"latency_ms": m["latency_ms"]},
+                )
+            report = await run_reconcile(
+                anchor_db_path,
+                scope=scope,
+                dry_run=dry_run,
+                drawer_lookup=drawer_lookup,
+            )
+        return success(
+            {
+                "scope": scope,
+                "dry_run": dry_run,
+                "changed": report.changed,
+                "scanned": report.scanned,
+                "warnings": report.warnings,
+            },
+            meta_extra={"latency_ms": m["latency_ms"]},
+        )
+
+    registry.register(
+        ToolSpec(
+            name="engram.reconcile",
+            description=RECONCILE_DESCRIPTION,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": ["symbols", "chunks", "memories", "all"],
+                    },
+                    "dry_run": {"type": "boolean", "default": False},
+                },
+                "additionalProperties": False,
+            },
+            handler=handler,
+        )
+    )
+
+
+# -----------------------------------------------------------------------------
+# engram.where_does_decision_apply
+# -----------------------------------------------------------------------------
+
+
+def _register_where_does_decision_apply(
+    registry: ToolRegistry,
+    *,
+    kg_query: KgQuery,
+    vec_search: VecSearch,
+    symbol_lookup: SymbolLookup,
+) -> None:
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        with latency_meter() as m:
+            entity = args.get("decision_entity")
+            limit = int(args.get("limit", 10))
+            if not isinstance(entity, str) or not entity:
+                return failure(
+                    "invalid-input",
+                    "decision_entity is required",
+                    meta_extra={"latency_ms": m["latency_ms"]},
+                )
+
+            facts = await kg_query(entity)
+            implementations: list[dict[str, Any]] = []
+            seen: set[str] = set()
+
+            # Use facts as hints: for each (subject, predicate, object) triple,
+            # the `object` is a likely related entity worth vec.searching.
+            related = _related_terms(entity, facts)
+            for term in related[:limit]:
+                chunks = await vec_search(term, limit)
+                for chunk in chunks:
+                    rel = chunk.get("relativePath") or chunk.get("relative_path")
+                    start = chunk.get("startLine") or chunk.get("start_line")
+                    if not isinstance(rel, str) or not isinstance(start, int):
+                        continue
+                    sig = f"{rel}:{start}"
+                    if sig in seen:
+                        continue
+                    seen.add(sig)
+                    enc = chunk.get("enclosing_symbol")
+                    if enc is None and isinstance(rel, str):
+                        enc = await symbol_lookup(
+                            chunk.get("symbol_name_path", term), rel
+                        )
+                    implementations.append({"chunk": chunk, "symbol": enc})
+                    if len(implementations) >= limit:
+                        break
+                if len(implementations) >= limit:
+                    break
+
+        return success(
+            {
+                "entity": entity,
+                "facts": facts,
+                "implementations": implementations,
+            },
+            meta_extra={"latency_ms": m["latency_ms"], "path_used": "C"},
+        )
+
+    registry.register(
+        ToolSpec(
+            name="engram.where_does_decision_apply",
+            description=WHERE_DECISION_DESCRIPTION,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "decision_entity": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["decision_entity"],
+                "additionalProperties": False,
+            },
+            handler=handler,
+        )
+    )
+
+
+def _related_terms(entity: str, facts: list[dict[str, Any]]) -> list[str]:
+    terms: list[str] = [entity]
+    seen: set[str] = {entity}
+    for fact in facts:
+        for key in ("object", "subject"):
+            value = fact.get(key)
+            if isinstance(value, str) and value and value not in seen:
+                seen.add(value)
+                terms.append(value)
+    return terms
+
+
+# -----------------------------------------------------------------------------
 # default lookup closures (production wiring)
 # -----------------------------------------------------------------------------
 
@@ -501,6 +670,33 @@ def _default_symbol_lookup(supervisor: Supervisor | None) -> SymbolLookup:
         return _as_structured(result)
 
     return lookup
+
+
+def _default_vec_search(supervisor: Supervisor | None) -> VecSearch:
+    async def search(query: str, limit: int) -> list[dict[str, Any]]:
+        if supervisor is None:
+            return []
+        client = supervisor.get("claude_context")
+        if client is None:
+            return []
+        try:
+            result = await client.call_tool(
+                "search_code", {"query": query, "limit": limit}
+            )
+        except Exception:  # noqa: BLE001
+            return []
+        if result.isError:
+            return []
+        payload = _as_structured(result)
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if isinstance(payload, dict):
+            results = payload.get("results") or payload.get("chunks")
+            if isinstance(results, list):
+                return [p for p in results if isinstance(p, dict)]
+        return []
+
+    return search
 
 
 def _default_mem_search(supervisor: Supervisor | None) -> MemSearch:

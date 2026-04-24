@@ -42,20 +42,20 @@
 
 ## 4. M3 — Features J4 / J5 + reconciler
 
-- [ ] 4.1 Implement `engram.contradicts` via in-process `fact_checker.check_text` import (preferred path)
-- [ ] 4.2 Implement `engram.contradicts` subprocess fallback (`python -m mempalace.fact_checker`)
-- [ ] 4.3 Implement `engram.where_does_decision_apply` (KG → vec → symbol composition)
-- [ ] 4.4 Implement reconciler job (symbols / chunks / memories / all scopes)
-- [ ] 4.5 Wire reconciler to 24-hour schedule + ad-hoc `engram.reconcile` tool + `engram reconcile` CLI
-- [ ] 4.6 Add tombstone logic to `symbol_history` for memory / chunk deletions detected by the reconciler
+- [x] 4.1 Implement `engram.contradicts` via in-process `fact_checker.check_text` import (preferred path)
+- [x] 4.2 Implement `engram.contradicts` subprocess fallback (`python -m mempalace.fact_checker`)
+- [x] 4.3 Implement `engram.where_does_decision_apply` (KG → vec → symbol composition)
+- [x] 4.4 Implement reconciler job (symbols / chunks / memories / all scopes)
+- [x] 4.5 Wire reconciler to 24-hour schedule + ad-hoc `engram.reconcile` tool + `engram reconcile` CLI
+- [x] 4.6 Add tombstone logic to `symbol_history` for memory / chunk deletions detected by the reconciler
 
 ## 5. Cross-cutting — response envelope, errors, versioning
 
-- [ ] 5.1 Implement `{result, meta}` / `{error, meta}` envelope helper used by every `engram.*` and every proxy tool
-- [ ] 5.2 Codify stable error-code taxonomy as an enum; reject unknown codes in CI
-- [ ] 5.3 Add `meta.path_used`, `meta.cache`, `meta.latency_ms`, `meta.protocol_version` to router responses
-- [ ] 5.4 Pin `protocol_version` = v1 in `engram.health` output
-- [ ] 5.5 Start-up collision check: fail `engram mcp` if any fully-qualified tool name duplicates
+- [x] 5.1 Implement `{result, meta}` / `{error, meta}` envelope helper used by every `engram.*` and every proxy tool
+- [x] 5.2 Codify stable error-code taxonomy as an enum; reject unknown codes in CI
+- [x] 5.3 Add `meta.path_used`, `meta.cache`, `meta.latency_ms`, `meta.protocol_version` to router responses
+- [x] 5.4 Pin `protocol_version` = v1 in `engram.health` output
+- [x] 5.5 Start-up collision check: fail `engram mcp` if any fully-qualified tool name duplicates
 
 ## 6. Testing
 

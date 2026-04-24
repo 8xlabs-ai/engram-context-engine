@@ -242,15 +242,77 @@ def supervisor_show_cmd(platform_name: str | None) -> None:
         _fail(f"unit template not bundled: {filename}")
 
 
-@main.command("reconcile", help="Invoke the reconciler (stub until M3 4.5).")
+@main.command("reconcile", help="Run the anchor-store reconciler.")
+@click.option(
+    "--workspace",
+    "workspace_dir",
+    default=".",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+)
 @click.option(
     "--scope",
     type=click.Choice(["symbols", "chunks", "memories", "all"]),
     default="all",
 )
 @click.option("--dry-run", is_flag=True)
-def reconcile_cmd(scope: str, dry_run: bool) -> None:
-    _fail("reconcile not implemented yet (M3 4.5)")
+@click.option(
+    "--skip-upstreams",
+    is_flag=True,
+    help="Skip drawer_lookup — reconcile chunk/symbol scopes only.",
+)
+def reconcile_cmd(
+    workspace_dir: Path, scope: str, dry_run: bool, skip_upstreams: bool
+) -> None:
+    import asyncio
+
+    from engram.upstream.supervisor import Supervisor, specs_from_config
+    from engram.workers.reconciler import reconcile as run_reconcile
+
+    workspace = workspace_dir.resolve()
+    config_path = workspace / CONFIG_RELPATH
+    if not config_path.exists():
+        _fail(f"no {CONFIG_RELPATH} at {workspace}; run `engram init` first")
+    cfg = Config.load(config_path)
+    db_path = workspace / cfg.anchors.db_path
+
+    async def run() -> dict:
+        if skip_upstreams:
+            report = await run_reconcile(db_path, scope=scope, dry_run=dry_run)
+            return report.__dict__
+        async with Supervisor(specs=specs_from_config(cfg)) as sup:
+            mempalace = sup.get("mempalace")
+
+            async def drawer_lookup(drawer_id: str):
+                if mempalace is None:
+                    return None
+                try:
+                    r = await mempalace.call_tool(
+                        "mempalace_get_drawer", {"drawer_id": drawer_id}
+                    )
+                except Exception:
+                    return None
+                if r.isError:
+                    return None
+                for block in r.content or []:
+                    txt = getattr(block, "text", None)
+                    if txt is None:
+                        continue
+                    try:
+                        return json.loads(txt)
+                    except json.JSONDecodeError:
+                        continue
+                return None
+
+            report = await run_reconcile(
+                db_path,
+                scope=scope,
+                dry_run=dry_run,
+                drawer_lookup=drawer_lookup,
+            )
+        return report.__dict__
+
+    result = asyncio.run(run())
+    click.echo(json.dumps(result, sort_keys=True))
 
 
 def _fail(message: str) -> None:
