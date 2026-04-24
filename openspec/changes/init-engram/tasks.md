@@ -2,7 +2,7 @@
 
 - [x] 1.1 Scaffold Python package `engram/` (pyproject, src layout, Python 3.11 pin)
 - [x] 1.2 Implement `engram init` CLI — config scaffold, SQLite schema bootstrap, prerequisite checks (Python / Node / Docker)
-- [ ] 1.3 Implement `engram mcp` stdio server registering all four namespaces
+- [x] 1.3 Implement `engram mcp` stdio server registering all four namespaces
 - [ ] 1.4 Implement pass-through proxy for `code.*` (Serena), `mem.*` (MemPalace), `vec.*` (claude-context) — no write interception yet
 - [ ] 1.5 Implement `engram.health` tool — per-upstream probe + latency + anchor-store counts
 - [ ] 1.6 Ship `engram/deploy/compose.yaml` for Milvus + Ollama

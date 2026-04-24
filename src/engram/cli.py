@@ -100,10 +100,21 @@ def status_cmd(workspace_dir: Path) -> None:
     click.echo(json.dumps({"workspace": cfg.workspace.model_dump(), "version": cfg.version}))
 
 
-@main.command("mcp", help="Start the Engram MCP stdio server (stub until M0 1.3).")
-def mcp_cmd() -> None:
+@main.command("mcp", help="Start the Engram MCP stdio server.")
+@click.option(
+    "--workspace",
+    "workspace_dir",
+    default=None,
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Workspace root (default: $ENGRAM_WORKSPACE or CWD).",
+)
+def mcp_cmd(workspace_dir: Path | None) -> None:
+    import os
+
     from engram import server
 
+    if workspace_dir is not None:
+        os.environ["ENGRAM_WORKSPACE"] = str(workspace_dir.resolve())
     raise SystemExit(server.main())
 
 
