@@ -5,14 +5,20 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
 from engram.config import Config
-from engram.upstream.client import UpstreamClient, UpstreamSpec
+from engram.upstream.client import UpstreamClient, UpstreamConnectionError, UpstreamSpec
 
 log = logging.getLogger("engram.supervisor")
 
 
 @dataclass
 class Supervisor:
-    """Owns the lifecycle of Serena / MemPalace / claude-context MCP clients."""
+    """Owns the lifecycle of Serena / MemPalace / claude-context MCP clients.
+
+    Per-spec connect failures are logged and skipped so a single missing
+    upstream does not prevent Engram from booting. Cross-session persistence
+    and automatic reconnect are the job of an OS-level supervisor unit
+    (see `deploy/units/`), not this in-process helper.
+    """
 
     specs: list[UpstreamSpec]
     clients: dict[str, UpstreamClient] = field(default_factory=dict)
@@ -24,7 +30,7 @@ class Supervisor:
             client = UpstreamClient(spec)
             try:
                 await client.connect()
-            except Exception as exc:  # noqa: BLE001
+            except UpstreamConnectionError as exc:
                 log.warning("upstream %s unavailable: %s", spec.name, exc)
                 continue
             self._stack.push_async_callback(client.disconnect)

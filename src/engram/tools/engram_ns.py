@@ -15,7 +15,7 @@ from engram.upstream.supervisor import Supervisor
 log = logging.getLogger("engram.health")
 
 HEALTH_DESCRIPTION = (
-    "Report Engram and upstream liveness plus anchor-store counts. "
+    "Report Engram and upstream liveness plus anchor-store counts.\n"
     "Use when you need a one-shot status probe before making a compound call."
 )
 

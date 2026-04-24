@@ -84,20 +84,67 @@ def init_cmd(
     )
 
 
-@main.command("status", help="Print workspace status (stub until M0 1.9).")
+@main.command("status", help="Print workspace health + anchor-store summary.")
 @click.option(
     "--workspace",
     "workspace_dir",
     default=".",
     type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
 )
-def status_cmd(workspace_dir: Path) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
+@click.option(
+    "--skip-upstreams",
+    is_flag=True,
+    help="Do not launch upstream MCP subprocesses; report as not connected.",
+)
+def status_cmd(workspace_dir: Path, as_json: bool, skip_upstreams: bool) -> None:
+    import asyncio
+
+    from engram.server import _bindings_for, build_registry
+    from engram.upstream.supervisor import Supervisor, specs_from_config
+
     workspace = workspace_dir.resolve()
     config_path = workspace / CONFIG_RELPATH
     if not config_path.exists():
         _fail(f"no {CONFIG_RELPATH} found at {workspace}; run `engram init` first")
     cfg = Config.load(config_path)
-    click.echo(json.dumps({"workspace": cfg.workspace.model_dump(), "version": cfg.version}))
+
+    async def run() -> dict:
+        specs = [] if skip_upstreams else specs_from_config(cfg)
+        async with Supervisor(specs=specs) as supervisor:
+            registry = build_registry(
+                cfg,
+                workspace,
+                proxies=_bindings_for(supervisor),
+                supervisor=supervisor,
+            )
+            spec = registry.get("engram.health")
+            assert spec is not None
+            return await spec.handler({})
+
+    payload = asyncio.run(run())
+    if as_json:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    r = payload.get("result", {})
+    ups = r.get("upstreams", {})
+    anchors = r.get("anchor_store", {})
+    click.echo(f"engram {r.get('engram_version', '?')}")
+    click.echo(f"  workspace: {workspace}")
+    click.echo(f"  anchor db: {workspace / cfg.anchors.db_path}")
+    click.echo(f"  status:    {r.get('status', '?')}")
+    click.echo("  upstreams:")
+    for name in ("serena", "mempalace", "claude_context"):
+        u = ups.get(name, {})
+        ok = "ok" if u.get("ok") else "down"
+        latency = u.get("latency_ms")
+        suffix = f" ({latency} ms)" if latency is not None else ""
+        reason = f" [{u.get('reason', '')}]" if not u.get("ok") and u.get("reason") else ""
+        click.echo(f"    {name:<15} {ok}{suffix}{reason}")
+    click.echo("  anchor store:")
+    for k in ("symbols", "anchors_symbol_memory", "anchors_symbol_chunk"):
+        click.echo(f"    {k:<22} {anchors.get(k, 0)}")
 
 
 @main.command("mcp", help="Start the Engram MCP stdio server.")
@@ -118,9 +165,81 @@ def mcp_cmd(workspace_dir: Path | None) -> None:
     raise SystemExit(server.main())
 
 
-@main.command("smoke-test", help="End-to-end plumbing check (stub until M0 1.8).")
-def smoke_test_cmd() -> None:
-    _fail("smoke-test not implemented yet (M0 1.8)")
+@main.command("smoke-test", help="End-to-end plumbing check.")
+@click.option(
+    "--workspace",
+    "workspace_dir",
+    default=".",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+)
+@click.option(
+    "--skip-upstreams",
+    is_flag=True,
+    help="Do not launch upstream MCP subprocesses; probe registry only.",
+)
+def smoke_test_cmd(workspace_dir: Path, skip_upstreams: bool) -> None:
+    import asyncio
+
+    from engram.config import Config
+    from engram.server import _bindings_for, build_registry
+    from engram.upstream.supervisor import Supervisor, specs_from_config
+
+    workspace = workspace_dir.resolve()
+    config_path = workspace / CONFIG_RELPATH
+    if not config_path.exists():
+        _fail(f"no {CONFIG_RELPATH} at {workspace}; run `engram init` first")
+
+    async def run() -> dict:
+        config = Config.load(config_path)
+        specs = [] if skip_upstreams else specs_from_config(config)
+        async with Supervisor(specs=specs) as supervisor:
+            registry = build_registry(
+                config,
+                workspace,
+                proxies=_bindings_for(supervisor),
+                supervisor=supervisor,
+            )
+            spec = registry.get("engram.health")
+            assert spec is not None
+            return await spec.handler({})
+
+    payload = asyncio.run(run())
+    click.echo(json.dumps(payload, sort_keys=True))
+    if "error" in payload:
+        raise SystemExit(1)
+    if skip_upstreams:
+        raise SystemExit(0)
+    if payload["result"]["status"] != "ok":
+        _fail(f"engram.health returned status={payload['result']['status']}")
+
+
+@main.group("supervisor", help="OS-level supervisor unit helpers.")
+def supervisor_group() -> None:
+    pass
+
+
+@supervisor_group.command("show", help="Print the bundled launchd/systemd unit templates.")
+@click.option(
+    "--platform",
+    "platform_name",
+    type=click.Choice(["darwin", "linux"]),
+    default=None,
+    help="Override auto-detected platform.",
+)
+def supervisor_show_cmd(platform_name: str | None) -> None:
+    from importlib.resources import files
+
+    chosen = platform_name or ("darwin" if sys.platform == "darwin" else "linux")
+    filename = "ai.engram.plist" if chosen == "darwin" else "engram.service"
+    try:
+        resource = files("engram").joinpath(f"../deploy/units/{filename}")
+        # Fall back to repo path when running from source
+        path = Path(str(resource)).resolve()
+        if not path.exists():
+            path = Path(__file__).parents[2] / "deploy" / "units" / filename
+        click.echo(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        _fail(f"unit template not bundled: {filename}")
 
 
 @main.command("reconcile", help="Invoke the reconciler (stub until M3 4.5).")

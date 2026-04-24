@@ -5,12 +5,12 @@
 - [x] 1.3 Implement `engram mcp` stdio server registering all four namespaces
 - [x] 1.4 Implement pass-through proxy for `code.*` (Serena), `mem.*` (MemPalace), `vec.*` (claude-context) — no write interception yet
 - [x] 1.5 Implement `engram.health` tool — per-upstream probe + latency + anchor-store counts
-- [ ] 1.6 Ship `engram/deploy/compose.yaml` for Milvus + Ollama
-- [ ] 1.7 Install supervisor unit (launchctl/systemd --user) in `engram init`
-- [ ] 1.8 Implement `engram smoke-test` — ping upstreams + vec.index fixture + assert health.ok
-- [ ] 1.9 Implement `engram status` human-readable summary
-- [ ] 1.10 Write description linter for `engram.*` two-line rule (CI gate)
-- [ ] 1.11 Commit `tests/fixtures/sample_workspace/` + `tests/fixtures/schema.sql`
+- [x] 1.6 Ship `engram/deploy/compose.yaml` for Milvus + Ollama
+- [x] 1.7 Install supervisor unit (launchctl/systemd --user) in `engram init`
+- [x] 1.8 Implement `engram smoke-test` — ping upstreams + vec.index fixture + assert health.ok
+- [x] 1.9 Implement `engram status` human-readable summary
+- [x] 1.10 Write description linter for `engram.*` two-line rule (CI gate)
+- [x] 1.11 Commit `tests/fixtures/sample_workspace/` + `tests/fixtures/schema.sql`
 
 ## 2. M1 — Link Layer + WAL tailer
 
