@@ -23,6 +23,7 @@ from engram.tools.mem_add_anchor import (
 )
 from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy
 from engram.tools.registry import ToolRegistry, ToolSpec
+from engram.tools.vec_enrich import make_vec_search_handler
 from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor, specs_from_config
@@ -135,7 +136,14 @@ def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBin
         )
     claude_context = supervisor.get("claude_context")
     if claude_context is not None:
-        bindings.append(ProxyBinding(claude_context, "vec", identity, "A"))
+        vec_interceptors = {
+            "search_code": make_vec_search_handler(
+                anchor_db_path, claude_context, lambda: supervisor.get("serena")
+            ),
+        }
+        bindings.append(
+            ProxyBinding(claude_context, "vec", identity, "A", vec_interceptors)
+        )
     return bindings
 
 

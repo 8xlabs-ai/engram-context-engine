@@ -29,15 +29,15 @@
 ## 3. M2 — Retrieval Router + RRF fusion
 
 - [x] 3.1 Implement path classifier covering all input shapes (query-only, name_path-only, both)
-- [ ] 3.2 Implement Path A (discovery-first) dispatcher
-- [ ] 3.3 Implement Path B (precision-first) dispatcher
-- [ ] 3.4 Implement Path C (fusion) dispatcher with parallel source dispatch
+- [x] 3.2 Implement Path A (discovery-first) dispatcher
+- [x] 3.3 Implement Path B (precision-first) dispatcher
+- [x] 3.4 Implement Path C (fusion) dispatcher with parallel source dispatch
 - [x] 3.5 Implement RRF k=60 fusion with truncation to K=20
-- [ ] 3.6 Implement LRU cache (default 1024 entries) keyed on `(tool_name, canonicalized_args)`
+- [x] 3.6 Implement LRU cache (default 1024 entries) keyed on `(tool_name, canonicalized_args)`
 - [ ] 3.7 Implement cache invalidation on Link Layer events (rename / delete / move)
-- [ ] 3.8 Implement entity extractor (symbol name_paths, file paths, decision entities)
+- [x] 3.8 Implement entity extractor (symbol name_paths, file paths, decision entities)
 - [x] 3.9 Implement `engram.why` composing symbol + memories + KG facts (Path B full; Path C deferred until dispatcher lands)
-- [ ] 3.10 Implement `enclosing_symbol` enrichment for `vec.search` results
+- [x] 3.10 Implement `enclosing_symbol` enrichment for `vec.search` results
 - [ ] 3.11 Commit `pytest-benchmark` baselines for path-A/B/C warm P50 budgets
 
 ## 4. M3 — Features J4 / J5 + reconciler
