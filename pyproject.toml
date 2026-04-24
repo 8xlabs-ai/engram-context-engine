@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "engram"
+version = "0.1.0"
+description = "Unified coding-agent substrate: symbol + memory + vector, with a Link Layer."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.15"
+authors = [{ name = "Engram contributors" }]
+
+dependencies = [
+    "mcp==1.27.0",
+    "serena-agent==1.1.2",
+    "mempalace==3.3.3",
+    "pydantic==2.12.5",
+    "click>=8.1,<9",
+    "watchdog>=4.0,<5",
+    "pyyaml==6.0.2",
+    "aiosqlite>=0.20,<1",
+    "anyio>=4.4,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-benchmark>=4.0,<5",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+]
+
+[project.scripts]
+engram = "engram.cli:main"
+engram-mcp = "engram.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engram"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/engram", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/engram"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
