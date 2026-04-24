@@ -3,8 +3,8 @@
 - [x] 1.1 Scaffold Python package `engram/` (pyproject, src layout, Python 3.11 pin)
 - [x] 1.2 Implement `engram init` CLI — config scaffold, SQLite schema bootstrap, prerequisite checks (Python / Node / Docker)
 - [x] 1.3 Implement `engram mcp` stdio server registering all four namespaces
-- [ ] 1.4 Implement pass-through proxy for `code.*` (Serena), `mem.*` (MemPalace), `vec.*` (claude-context) — no write interception yet
-- [ ] 1.5 Implement `engram.health` tool — per-upstream probe + latency + anchor-store counts
+- [x] 1.4 Implement pass-through proxy for `code.*` (Serena), `mem.*` (MemPalace), `vec.*` (claude-context) — no write interception yet
+- [x] 1.5 Implement `engram.health` tool — per-upstream probe + latency + anchor-store counts
 - [ ] 1.6 Ship `engram/deploy/compose.yaml` for Milvus + Ollama
 - [ ] 1.7 Install supervisor unit (launchctl/systemd --user) in `engram init`
 - [ ] 1.8 Implement `engram smoke-test` — ping upstreams + vec.index fixture + assert health.ok

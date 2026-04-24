@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,17 +16,41 @@ from mcp.server.stdio import stdio_server
 from engram.config import Config
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.envelope import failure
+from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy
 from engram.tools.registry import ToolRegistry, ToolSpec
+from engram.upstream.client import UpstreamClient
+from engram.upstream.supervisor import Supervisor, specs_from_config
 
 log = logging.getLogger("engram.server")
 
 CONFIG_RELPATH = ".engram/config.yaml"
 
 
-def build_registry(config: Config, workspace: Path) -> ToolRegistry:
+@dataclass(frozen=True)
+class ProxyBinding:
+    client: UpstreamClient
+    namespace: str
+    shortener: Any  # Callable[[str], str]
+    default_path_tag: str | None
+
+
+def build_registry(
+    config: Config,
+    workspace: Path,
+    proxies: list[ProxyBinding] | None = None,
+    supervisor: Supervisor | None = None,
+) -> ToolRegistry:
     registry = ToolRegistry()
     anchor_db = workspace / config.anchors.db_path
-    register_engram_tools(registry, anchor_db)
+    register_engram_tools(registry, anchor_db, supervisor=supervisor)
+    for binding in proxies or []:
+        register_proxy(
+            registry=registry,
+            client=binding.client,
+            namespace=binding.namespace,
+            shortener=binding.shortener,
+            default_path_tag=binding.default_path_tag,
+        )
     return registry
 
 
@@ -79,20 +104,52 @@ def load_config(workspace: Path) -> Config:
     return Config.load(config_path)
 
 
-async def _run(workspace: Path) -> None:
+def _bindings_for(supervisor: Supervisor) -> list[ProxyBinding]:
+    bindings: list[ProxyBinding] = []
+    serena = supervisor.get("serena")
+    if serena is not None:
+        bindings.append(ProxyBinding(serena, "code", identity, "B"))
+    mempalace = supervisor.get("mempalace")
+    if mempalace is not None:
+        bindings.append(ProxyBinding(mempalace, "mem", drop_mempalace_prefix, None))
+    claude_context = supervisor.get("claude_context")
+    if claude_context is not None:
+        bindings.append(ProxyBinding(claude_context, "vec", identity, "A"))
+    return bindings
+
+
+async def _run(workspace: Path, enable_upstreams: bool) -> None:
     config = load_config(workspace)
-    registry = build_registry(config, workspace)
-    server = build_server(registry)
-    log.info("engram mcp starting: %d tools registered", len(registry))
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    specs = specs_from_config(config) if enable_upstreams else []
+    async with Supervisor(specs=specs) as supervisor:
+        registry = build_registry(
+            config,
+            workspace,
+            proxies=_bindings_for(supervisor),
+            supervisor=supervisor,
+        )
+        server = build_server(registry)
+        log.info(
+            "engram mcp starting: %d tools registered (%d upstreams connected)",
+            len(registry),
+            len(supervisor.clients),
+        )
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
     workspace = resolve_workspace(os.environ.get("ENGRAM_WORKSPACE"))
+    enable_upstreams = os.environ.get("ENGRAM_DISABLE_UPSTREAMS") != "1"
     try:
-        asyncio.run(_run(workspace))
+        asyncio.run(_run(workspace, enable_upstreams))
     except KeyboardInterrupt:
         return 0
     return 0
