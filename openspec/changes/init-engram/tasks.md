@@ -14,17 +14,17 @@
 
 ## 2. M1 — Link Layer + WAL tailer
 
-- [ ] 2.1 Implement 7-table SQLite schema + 3 unique partial indices (`link-layer` spec)
-- [ ] 2.2 Implement `symbols` / `symbol_history` write path
+- [x] 2.1 Implement 7-table SQLite schema + 3 unique partial indices (`link-layer` spec)
+- [x] 2.2 Implement `symbols` / `symbol_history` write path
 - [ ] 2.3 Implement WAL tailer for `~/.mempalace/wal/write_log.jsonl` with persisted byte-offset cursor
-- [ ] 2.4 Implement `engram.anchor_memory_to_symbol` tool with idempotent insert
-- [ ] 2.5 Implement `engram.anchor_memory_to_chunk` tool with `drawer-not-found` validation
+- [x] 2.4 Implement `engram.anchor_memory_to_symbol` tool with idempotent insert
+- [x] 2.5 Implement `engram.anchor_memory_to_chunk` tool with `drawer-not-found` validation
 - [ ] 2.6 Implement write-path interception for `code.rename_symbol` + `code.safe_delete_symbol` (DB tx first, Serena second, commit on success)
 - [ ] 2.7 Implement write-path interception for `code.replace_*` / `code.insert_*` / `code.create_text_file` (anchor cache invalidation)
 - [ ] 2.8 Wire rename → KG triple insert + invalidate in `mem.kg_add` / `mem.kg_invalidate`
-- [ ] 2.9 Implement `engram.symbol_history` tool
+- [x] 2.9 Implement `engram.symbol_history` tool
 - [ ] 2.10 Implement `mem.add` anchor fast-path (optional `anchor_symbol_name_path` + `anchor_relative_path`)
-- [ ] 2.11 Add `wal_lag_seconds` + `anchor_store` counts to `engram.health`
+- [x] 2.11 Add `wal_lag_seconds` + `anchor_store` counts to `engram.health`
 
 ## 3. M2 — Retrieval Router + RRF fusion
 

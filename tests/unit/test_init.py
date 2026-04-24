@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from engram.cli import main
@@ -23,6 +24,11 @@ EXPECTED_UNIQUE_ANCHOR_INDICES = {
     "idx_asm_identity",
     "idx_asc_identity",
     "idx_amc_identity",
+}
+EXPECTED_FK_EDGES = {
+    ("anchors_symbol_memory", "symbols"),
+    ("anchors_symbol_chunk", "symbols"),
+    ("symbol_history", "symbols"),
 }
 
 
@@ -58,6 +64,47 @@ def test_init_db_creates_schema(tmp_path: Path) -> None:
             "last_reconcile_at",
             "claude_context_index_generation",
         }.issubset(seeded_keys)
+    finally:
+        conn.close()
+
+
+def test_unique_partial_index_forbids_live_duplicate(tmp_path: Path) -> None:
+    db = tmp_path / "anchors.sqlite"
+    conn = init_db(db)
+    try:
+        conn.execute(
+            "INSERT INTO symbols (name_path, relative_path, kind) VALUES (?, ?, ?)",
+            ("Foo/process", "src/foo.py", 12),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO symbols (name_path, relative_path, kind) VALUES (?, ?, ?)",
+                ("Foo/process", "src/foo.py", 12),
+            )
+        # Tombstoned row + live row for the same identity is allowed.
+        conn.execute(
+            "UPDATE symbols SET tombstoned_at = datetime('now') "
+            "WHERE name_path = 'Foo/process' AND relative_path = 'src/foo.py'"
+        )
+        conn.execute(
+            "INSERT INTO symbols (name_path, relative_path, kind) VALUES (?, ?, ?)",
+            ("Foo/process", "src/foo.py", 12),
+        )
+    finally:
+        conn.close()
+
+
+def test_foreign_keys_configured(tmp_path: Path) -> None:
+    db = tmp_path / "anchors.sqlite"
+    conn = init_db(db)
+    try:
+        discovered: set[tuple[str, str]] = set()
+        for (table,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall():
+            for row in conn.execute(f"PRAGMA foreign_key_list({table})").fetchall():
+                discovered.add((table, row[2]))
+        assert EXPECTED_FK_EDGES.issubset(discovered)
     finally:
         conn.close()
 
