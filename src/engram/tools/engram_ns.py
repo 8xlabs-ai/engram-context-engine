@@ -18,6 +18,7 @@ from engram.link.store import (
     upsert_anchor_symbol_memory,
     upsert_symbol,
 )
+from engram.router.classifier import classify_query
 from engram.tools.envelope import failure, latency_meter, success
 from engram.tools.registry import ToolRegistry, ToolSpec
 from engram.upstream.client import UpstreamClient
@@ -46,6 +47,11 @@ SYMBOL_HISTORY_DESCRIPTION = (
     "Use when debugging anchor staleness or answering 'what used to be here?'."
 )
 
+WHY_DESCRIPTION = (
+    "Explain why a symbol exists: resolve it, list anchored / relevant memories, and KG facts.\n"
+    "Prefer this over code.find_symbol when the question is *why*, not *where*."
+)
+
 # Lightweight probes per upstream — each is a tool on the upstream that returns
 # fast and does not mutate state. Picked from docs 01–03.
 PROBE_TOOL = {
@@ -57,6 +63,8 @@ PROBE_TOOL = {
 
 DrawerLookup = Callable[[str], Awaitable[dict[str, Any] | None]]
 SymbolLookup = Callable[[str, str], Awaitable[dict[str, Any] | None]]
+MemSearch = Callable[[str], Awaitable[list[dict[str, Any]]]]
+KgQuery = Callable[[str], Awaitable[list[dict[str, Any]]]]
 
 
 def register_engram_tools(
@@ -65,14 +73,19 @@ def register_engram_tools(
     supervisor: Supervisor | None = None,
     drawer_lookup: DrawerLookup | None = None,
     symbol_lookup: SymbolLookup | None = None,
+    mem_search: MemSearch | None = None,
+    kg_query: KgQuery | None = None,
 ) -> None:
     """Register all engram.* tools.
 
-    `drawer_lookup` and `symbol_lookup` are override hooks used by tests; in
-    production the closures derived from `supervisor` are used.
+    `drawer_lookup`, `symbol_lookup`, `mem_search`, and `kg_query` are override
+    hooks used by tests; in production the closures derived from `supervisor`
+    are used.
     """
     drawer_lookup = drawer_lookup or _default_drawer_lookup(supervisor)
     symbol_lookup = symbol_lookup or _default_symbol_lookup(supervisor)
+    mem_search = mem_search or _default_mem_search(supervisor)
+    kg_query = kg_query or _default_kg_query(supervisor)
 
     _register_health(registry, anchor_db_path, supervisor)
     _register_anchor_memory_to_symbol(
@@ -80,6 +93,13 @@ def register_engram_tools(
     )
     _register_anchor_memory_to_chunk(registry, anchor_db_path, drawer_lookup)
     _register_symbol_history(registry, anchor_db_path, drawer_lookup)
+    _register_why(
+        registry,
+        anchor_db_path,
+        symbol_lookup=symbol_lookup,
+        mem_search=mem_search,
+        kg_query=kg_query,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -356,6 +376,88 @@ def _register_symbol_history(
 
 
 # -----------------------------------------------------------------------------
+# engram.why
+# -----------------------------------------------------------------------------
+
+
+def _register_why(
+    registry: ToolRegistry,
+    anchor_db_path: Path,
+    *,
+    symbol_lookup: SymbolLookup,
+    mem_search: MemSearch,
+    kg_query: KgQuery,
+) -> None:
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        with latency_meter() as m:
+            name_path = args.get("name_path")
+            relative_path = args.get("relative_path")
+            free_query = args.get("free_query")
+            if not (isinstance(name_path, str) and name_path) and not (
+                isinstance(free_query, str) and free_query
+            ):
+                return failure(
+                    "invalid-input",
+                    "at least one of name_path or free_query is required",
+                    meta_extra={"latency_ms": m["latency_ms"]},
+                )
+
+            path = classify_query(
+                {"name_path": name_path, "query": free_query, "fusion": False}
+            )
+
+            result: dict[str, Any] = {
+                "symbol": None,
+                "memories": [],
+                "facts": [],
+            }
+
+            if isinstance(name_path, str) and name_path:
+                if isinstance(relative_path, str) and relative_path:
+                    sym = await symbol_lookup(name_path, relative_path)
+                    if sym is None:
+                        return failure(
+                            "symbol-not-found",
+                            f"no symbol resolved for {name_path}@{relative_path}",
+                            meta_extra={
+                                "latency_ms": m["latency_ms"],
+                                "path_used": path,
+                            },
+                        )
+                    result["symbol"] = sym
+                result["memories"] = await mem_search(name_path)
+                result["facts"] = await kg_query(name_path)
+            else:
+                # Free-query only: Path A/C. M2 minimum ships Path B fully;
+                # Path C fusion body is deferred until the router dispatcher
+                # (tasks 3.2–3.4) lands. Return an empty envelope with a meta
+                # warning so callers can still exercise the tool.
+                result["memories"] = await mem_search(str(free_query))
+
+        return success(
+            result,
+            meta_extra={"latency_ms": m["latency_ms"], "path_used": path},
+        )
+
+    registry.register(
+        ToolSpec(
+            name="engram.why",
+            description=WHY_DESCRIPTION,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name_path": {"type": "string"},
+                    "relative_path": {"type": "string"},
+                    "free_query": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            handler=handler,
+        )
+    )
+
+
+# -----------------------------------------------------------------------------
 # default lookup closures (production wiring)
 # -----------------------------------------------------------------------------
 
@@ -399,6 +501,58 @@ def _default_symbol_lookup(supervisor: Supervisor | None) -> SymbolLookup:
         return _as_structured(result)
 
     return lookup
+
+
+def _default_mem_search(supervisor: Supervisor | None) -> MemSearch:
+    async def search(query: str) -> list[dict[str, Any]]:
+        if supervisor is None:
+            return []
+        client = supervisor.get("mempalace")
+        if client is None:
+            return []
+        try:
+            result = await client.call_tool("mempalace_search", {"query": query})
+        except Exception:  # noqa: BLE001
+            return []
+        if result.isError:
+            return []
+        payload = _as_structured(result)
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if isinstance(payload, dict):
+            results = payload.get("results") or payload.get("drawers")
+            if isinstance(results, list):
+                return [p for p in results if isinstance(p, dict)]
+        return []
+
+    return search
+
+
+def _default_kg_query(supervisor: Supervisor | None) -> KgQuery:
+    async def query(subject: str) -> list[dict[str, Any]]:
+        if supervisor is None:
+            return []
+        client = supervisor.get("mempalace")
+        if client is None:
+            return []
+        try:
+            result = await client.call_tool(
+                "mempalace_kg_query", {"subject": subject}
+            )
+        except Exception:  # noqa: BLE001
+            return []
+        if result.isError:
+            return []
+        payload = _as_structured(result)
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if isinstance(payload, dict):
+            triples = payload.get("triples") or payload.get("facts")
+            if isinstance(triples, list):
+                return [p for p in triples if isinstance(p, dict)]
+        return []
+
+    return query
 
 
 def _as_structured(result: Any) -> dict[str, Any] | None:
