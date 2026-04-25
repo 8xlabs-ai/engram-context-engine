@@ -27,6 +27,7 @@ from engram.tools.vec_enrich import make_vec_search_handler
 from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor, specs_from_config
+from engram.workers.scheduler import ReconcilerScheduler
 
 log = logging.getLogger("engram.server")
 
@@ -163,10 +164,43 @@ async def _run(workspace: Path, enable_upstreams: bool) -> None:
             len(registry),
             len(supervisor.clients),
         )
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(
-                read_stream, write_stream, server.create_initialization_options()
-            )
+        anchor_db = workspace / config.anchors.db_path
+        mempalace_client = supervisor.get("mempalace")
+
+        async def drawer_lookup(drawer_id: str):
+            if mempalace_client is None:
+                return None
+            try:
+                r = await mempalace_client.call_tool(
+                    "mempalace_get_drawer", {"drawer_id": drawer_id}
+                )
+            except Exception:  # noqa: BLE001
+                return None
+            if r.isError:
+                return None
+            for block in r.content or []:
+                txt = getattr(block, "text", None)
+                if txt is None:
+                    continue
+                try:
+                    return json.loads(txt)
+                except json.JSONDecodeError:
+                    continue
+            return None
+
+        scheduler = ReconcilerScheduler(
+            db_path=anchor_db,
+            drawer_lookup=drawer_lookup,
+            interval_hours=float(config.anchors.reconcile_interval_hours),
+        )
+        scheduler.start()
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await server.run(
+                    read_stream, write_stream, server.create_initialization_options()
+                )
+        finally:
+            await scheduler.stop()
 
 
 def main() -> int:
