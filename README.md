@@ -31,7 +31,7 @@ agent client (Claude Code / Cursor / Claude Desktop)
 
 ## Status
 
-v1 foundation complete. **52 / 57 tasks shipped, 113 unit tests green** (see [Recently fixed](#recently-fixed) and [Known gaps / TODO](#known-gaps--todo)). Source of truth: `openspec/specs/` for behavior, `00-12-*.md` for rationale.
+v1 foundation complete + post-archive hardening (LICENSE, Serena warm-up, mem.search keyword normalization, scheduler, hook bus, router benchmarks). **130+ unit tests green + 3 benchmarks under spec budgets** (see [Recently fixed](#recently-fixed) and [Known gaps / TODO](#known-gaps--todo)). Source of truth: `openspec/specs/` for behavior, `00-12-*.md` for rationale.
 
 ---
 
@@ -401,8 +401,12 @@ systemctl --user enable --now engram.service
 | `17bc92b` | claude-context probe now passes `{"path": workspace_root}` to `get_indexing_status`. `engram.health` was reporting `degraded` despite working tools. Same commit also archived `init-engram` change → 34 requirements promoted to `openspec/specs/`. |
 | `0b64ffc` | `mem.*` CRUD aliases — `add` / `get` / `list` / `update` / `delete` collapse the `_drawer` / `_drawers` suffix per doc 07 §4. Previously registered as `mem.add_drawer` etc. |
 | `11784c8` | `vec.*` aliases — `index` / `search` / `clear` / `status` map to claude-context's verbose names per doc 07 §4. Previously registered as `vec.index_codebase` etc. |
+| `031f52b` | Supervisor warms Serena (`activate_project` + `check_onboarding_performed` + optional `onboarding`) after connect. Resolves the "find_symbol returns null on first call against a fresh `--project`" gotcha. |
+| `6b6e9f3` | `mem.search` keyword normalization: `Pipeline/process_batch` → `Pipeline process_batch`, max 250 chars, explicit `limit=10`. MemPalace's schema requires keyword-only queries. |
+| (HEAD-3) | `ReconcilerScheduler` runs `reconcile(scope=all)` every `reconcile_interval_hours` (default 24, clamped to ≥60s). Records `meta.last_reconcile_at`. Closes original task 4.5. |
+| (HEAD-2) | In-process hook bus (`src/engram/events.py`); LRU cache subscribes and evicts on `symbol.renamed` / `symbol.tombstoned` / `file.replaced`. Closes original task 3.7. |
 
-All four caught only by real-upstream integration; pure unit tests would not have surfaced them.
+All four MCP-naming/env bugs caught only by real-upstream integration; pure unit tests would not have surfaced them.
 
 ---
 
@@ -410,14 +414,10 @@ All four caught only by real-upstream integration; pure unit tests would not hav
 
 | Item | Status | Workaround / note |
 |---|---|---|
-| **2.7** — write-path cache invalidation on `code.replace_*` / `insert_*` / `create_text_file` | deferred | Needs an in-process hook bus. Current build forwards calls through proxy without anchor-cache eviction. |
-| **3.7** — cache invalidation on Link Layer events (rename / delete / move) | deferred | Same hook-bus dependency as 2.7. `LRUCache.invalidate_if(predicate)` exists; no event source wired. |
-| **3.11** — pytest-benchmark warm P50 baselines (A ≤150 ms, B ≤100 ms, C ≤300 ms) | deferred | Feasible now that real upstreams boot; not yet captured. |
+| **2.7** — write-path cache invalidation on `code.replace_*` / `insert_*` / `create_text_file` | open | Hook bus now exists; just need to wire `EVENT_FILE_REPLACED` emit on these proxy paths. |
 | **7.3** — PyPI `0.1.0` release | deferred | Install from a checkout (`pip install -e .`); release infra TBD. |
 | **7.4** — optional upstream PRs (PR-SER-1 `on_tool_invoked`, PR-CC-1 `sync_now`) | deferred | Both additive; current code works without them. |
 | **Q-1.7-WATCHDOG** (design.md) | deferred | In-process Supervisor reconnect collides with anyio task-group scopes. OS unit templates ship instead — see §11. |
-| **Serena LSP first-call symbol resolution** | open follow-up | `find_symbol` returned null on first call against a fresh `--project`. Workaround: call `code.activate_project` and retry, or wait a few seconds after server boot. |
-| **`mem.search` arg shape** | open follow-up | Returned 0 hits in real-data scenarios despite drawer being just written. Probe live `mempalace_search` to learn required keys (likely `top_k` / wing filter). |
 | **`vec.search` end-to-end with real Ollama** | partial | Pipeline works (`vec.index` + `vec.status` + `vec.search` all execute). First index against real Ollama is multi-minute; no worked example shipped to avoid misleading expectations. |
 
 ---
@@ -460,10 +460,12 @@ engram/
 
 ```bash
 cd engram
-PYTHONPATH=src .venv/bin/pytest tests/unit/    # → 113 passed
+PYTHONPATH=src .venv/bin/pytest tests/unit/         # 130+ unit tests; runs in <10s
+PYTHONPATH=src .venv/bin/pytest tests/integration/benchmarks/ \
+    --benchmark-only --benchmark-columns=median,mean   # router-overhead P50 gates
 ```
 
-Tests use inline fake MCP servers (`tests/fixtures/fake_*.py`) so the full unit suite runs without installing Serena / MemPalace / claude-context wheels.
+Unit tests use inline fake MCP servers (`tests/fixtures/fake_*.py`) so the full unit suite runs without installing Serena / MemPalace / claude-context wheels. The benchmark suite measures router-internal overhead against deterministic fake sources; per-spec budgets are Path A ≤150 ms / B ≤100 ms / C ≤300 ms warm P50 (typical observed: ~120 / 120 / 200 μs).
 
 ---
 
