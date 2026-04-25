@@ -415,7 +415,7 @@ All four MCP-naming/env bugs caught only by real-upstream integration; pure unit
 | Item | Status | Workaround / note |
 |---|---|---|
 | **2.7** — write-path cache invalidation on `code.replace_*` / `insert_*` / `create_text_file` | open | Hook bus now exists; just need to wire `EVENT_FILE_REPLACED` emit on these proxy paths. |
-| **7.3** — PyPI `0.1.0` release | deferred | Install from a checkout (`pip install -e .`); release infra TBD. |
+| **7.3** — PyPI `0.1.0` release | release-ready | Workflow `engram-release.yml` + `CHANGELOG.md` shipped; awaiting fresh-machine setup.sh validation + repo secret config before tag. |
 | **7.4** — optional upstream PRs (PR-SER-1 `on_tool_invoked`, PR-CC-1 `sync_now`) | deferred | Both additive; current code works without them. |
 | **Q-1.7-WATCHDOG** (design.md) | deferred | In-process Supervisor reconnect collides with anyio task-group scopes. OS unit templates ship instead — see §11. |
 | **`vec.search` end-to-end with real Ollama** | partial | Pipeline works (`vec.index` + `vec.status` + `vec.search` all execute). First index against real Ollama is multi-minute; no worked example shipped to avoid misleading expectations. |
@@ -428,6 +428,8 @@ All four MCP-naming/env bugs caught only by real-upstream integration; pure unit
 engram/
 ├── pyproject.toml
 ├── README.md
+├── CHANGELOG.md
+├── LICENSE
 ├── setup.sh                  (one-shot installer; see Quick install)
 ├── src/engram/
 │   ├── cli.py, config.py, server.py
@@ -477,6 +479,10 @@ GitHub Actions workflow at repo-root `.github/workflows/engram-ci.yml` runs on e
 4. `pytest tests/unit/ -q`.
 5. `pytest tests/integration/benchmarks/ --benchmark-only` (gates Path A/B/C medians against spec budgets — fails if a router regression pushes any path over).
 6. `engram.*` two-line description lint.
+
+### Release
+
+`.github/workflows/engram-release.yml` is a `workflow_dispatch` job that builds wheel + sdist, validates metadata with `twine check`, and (gated on the `publish` input) ships to PyPI. With `publish=false` it dry-runs to TestPyPI. Requires repo secret `PYPI_API_TOKEN` (or OIDC trusted publishing). See `CHANGELOG.md` for the v0.1.0 release checklist.
 
 ---
 
