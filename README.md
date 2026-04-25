@@ -1,9 +1,5 @@
 <div align="center">
 
-# Engram
-
-🆕 **Just need vector code search?** Check out [Claude Context](https://github.com/zilliztech/claude-context) — Engram's vector layer — for a focused codebase-search MCP server. Engram composes it with two more retrieval primitives.
-
 ### Your codebase, your decisions, and your team's memory — all as Claude's context
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
