@@ -14,6 +14,11 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from engram.events import (
+    EVENT_SYMBOL_RENAMED,
+    EVENT_SYMBOL_TOMBSTONED,
+    HookBus,
+)
 from engram.link.store import (
     get_symbol,
     open_db,
@@ -34,6 +39,7 @@ def make_rename_interceptor(
     db_path: Path,
     serena_client: UpstreamClient,
     kg_client_getter: ClientGetter,
+    bus: HookBus | None = None,
 ) -> ToolHandler:
     async def handler(arguments: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
@@ -81,11 +87,22 @@ def make_rename_interceptor(
             finally:
                 conn.close()
 
+        new_name_path = _rename_preview(name_path, new_name)
         await _record_rename_in_kg(
             kg_client_getter(),
             old_name_path=name_path,
-            new_name_path=_rename_preview(name_path, new_name),
+            new_name_path=new_name_path,
         )
+        if bus is not None:
+            await bus.publish(
+                EVENT_SYMBOL_RENAMED,
+                {
+                    "symbol_id": symbol_id,
+                    "old_name_path": name_path,
+                    "new_name_path": new_name_path,
+                    "relative_path": relative_path,
+                },
+            )
         return success(
             {"symbol_id": symbol_id, "upstream": _structured(result)},
             meta_extra={
@@ -102,6 +119,7 @@ def make_safe_delete_interceptor(
     db_path: Path,
     serena_client: UpstreamClient,
     kg_client_getter: ClientGetter,
+    bus: HookBus | None = None,
 ) -> ToolHandler:
     async def handler(arguments: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
@@ -141,6 +159,15 @@ def make_safe_delete_interceptor(
 
         if existing is not None:
             await _invalidate_in_kg(kg_client_getter(), name_path=name_path)
+        if bus is not None and existing is not None:
+            await bus.publish(
+                EVENT_SYMBOL_TOMBSTONED,
+                {
+                    "symbol_id": existing.symbol_id,
+                    "name_path": name_path,
+                    "relative_path": relative_path,
+                },
+            )
         return success(
             {"upstream": _structured(result)},
             meta_extra={

@@ -14,6 +14,7 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
 from engram.config import Config
+from engram.events import HookBus
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.envelope import failure
 from engram.tools.mem_add_anchor import (
@@ -114,16 +115,20 @@ def load_config(workspace: Path) -> Config:
     return Config.load(config_path)
 
 
-def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBinding]:
+def _bindings_for(
+    supervisor: Supervisor,
+    anchor_db_path: Path,
+    bus: HookBus | None = None,
+) -> list[ProxyBinding]:
     bindings: list[ProxyBinding] = []
     serena = supervisor.get("serena")
     if serena is not None:
         interceptors = {
             "rename_symbol": make_rename_interceptor(
-                anchor_db_path, serena, lambda: supervisor.get("mempalace")
+                anchor_db_path, serena, lambda: supervisor.get("mempalace"), bus=bus
             ),
             "safe_delete_symbol": make_safe_delete_interceptor(
-                anchor_db_path, serena, lambda: supervisor.get("mempalace")
+                anchor_db_path, serena, lambda: supervisor.get("mempalace"), bus=bus
             ),
         }
         bindings.append(ProxyBinding(serena, "code", identity, "B", interceptors))
@@ -151,11 +156,12 @@ def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBin
 async def _run(workspace: Path, enable_upstreams: bool) -> None:
     config = load_config(workspace)
     specs = specs_from_config(config) if enable_upstreams else []
+    bus = HookBus()
     async with Supervisor(specs=specs, workspace_root=str(workspace)) as supervisor:
         registry = build_registry(
             config,
             workspace,
-            proxies=_bindings_for(supervisor, workspace / config.anchors.db_path),
+            proxies=_bindings_for(supervisor, workspace / config.anchors.db_path, bus=bus),
             supervisor=supervisor,
         )
         server = build_server(registry)

@@ -12,6 +12,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
+from engram.events import (
+    EVENT_FILE_REPLACED,
+    EVENT_SYMBOL_RENAMED,
+    EVENT_SYMBOL_TOMBSTONED,
+    HookBus,
+)
+
 DEFAULT_MAX_ENTRIES = 1024
 
 
@@ -55,6 +62,33 @@ class LRUCache:
 
     def clear(self) -> None:
         self._store.clear()
+
+    def subscribe_to(self, bus: HookBus) -> None:
+        """Wire LRU eviction to Link Layer events.
+
+        - `symbol.renamed`: drop entries whose key references the old name_path.
+        - `symbol.tombstoned`: drop entries referencing the symbol's name_path.
+        - `file.replaced`: drop entries referencing the relative_path.
+        """
+
+        async def on_renamed(payload: Any) -> None:
+            old = str(payload.get("old_name_path") or "")
+            new = str(payload.get("new_name_path") or "")
+            self.invalidate_if(
+                lambda _tool, args: (old and old in args) or (new and new in args)
+            )
+
+        async def on_tombstoned(payload: Any) -> None:
+            name_path = str(payload.get("name_path") or "")
+            self.invalidate_if(lambda _t, args: bool(name_path) and name_path in args)
+
+        async def on_file_replaced(payload: Any) -> None:
+            rel = str(payload.get("relative_path") or "")
+            self.invalidate_if(lambda _t, args: bool(rel) and rel in args)
+
+        bus.subscribe(EVENT_SYMBOL_RENAMED, on_renamed)
+        bus.subscribe(EVENT_SYMBOL_TOMBSTONED, on_tombstoned)
+        bus.subscribe(EVENT_FILE_REPLACED, on_file_replaced)
 
     def __len__(self) -> int:
         return len(self._store)
