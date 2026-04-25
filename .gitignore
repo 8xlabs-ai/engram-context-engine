@@ -18,3 +18,5 @@ node_modules/
 
 # Local session change logs (per-day snapshots of work-in-progress).
 change_log/
+landing-page/
+docs/
