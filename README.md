@@ -35,6 +35,30 @@ v1 foundation complete. **52 / 57 tasks shipped, 113 unit tests green** (see [Re
 
 ---
 
+## Quick install (`setup.sh`)
+
+One command does prereq checks, venv, pip, npm, compose, ollama model pull, `engram init`, config patch, and `engram smoke-test`:
+
+```bash
+git clone <repo> && cd engram
+./setup.sh --workspace /path/to/your/repo
+```
+
+It is idempotent — safe to re-run. Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--workspace DIR` | Where `.engram/` lives (default: `$PWD`). |
+| `--skip-compose` | Don't touch Docker (assume Milvus + Ollama already running, or skip them). |
+| `--skip-npm` | Don't install `@zilliz/claude-context-mcp` globally; let `npx` pull lazily. |
+| `--force-init` | Overwrite an existing `.engram/config.yaml`. |
+| `--no-smoke` | Skip the final `engram smoke-test` (faster on cold runs). |
+| `--help` | Print usage banner. |
+
+After it finishes, register `engram-mcp` with your agent client — see §7. If you'd rather drive each step by hand, sections §1–§6 below cover the same ground.
+
+---
+
 ## 1. Prerequisites
 
 | Tool | Version | Why |
@@ -404,6 +428,7 @@ All four caught only by real-upstream integration; pure unit tests would not hav
 engram/
 ├── pyproject.toml
 ├── README.md
+├── setup.sh                  (one-shot installer; see Quick install)
 ├── src/engram/
 │   ├── cli.py, config.py, server.py
 │   ├── link/{schema.sql, store.py}

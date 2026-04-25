@@ -12,7 +12,7 @@ requires-python = ">=3.11,<3.15"
 authors = [{ name = "Engram contributors" }]
 
 dependencies = [
-    "mcp==1.27.0",
+    "mcp>=1.26,<2",
     "serena-agent==1.1.2",
     "mempalace==3.3.3",
     "pydantic==2.12.5",
