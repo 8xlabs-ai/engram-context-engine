@@ -111,7 +111,7 @@ def status_cmd(workspace_dir: Path, as_json: bool, skip_upstreams: bool) -> None
 
     async def run() -> dict:
         specs = [] if skip_upstreams else specs_from_config(cfg)
-        async with Supervisor(specs=specs) as supervisor:
+        async with Supervisor(specs=specs, workspace_root=str(workspace)) as supervisor:
             registry = build_registry(
                 cfg,
                 workspace,
@@ -192,7 +192,7 @@ def smoke_test_cmd(workspace_dir: Path, skip_upstreams: bool) -> None:
     async def run() -> dict:
         config = Config.load(config_path)
         specs = [] if skip_upstreams else specs_from_config(config)
-        async with Supervisor(specs=specs) as supervisor:
+        async with Supervisor(specs=specs, workspace_root=str(workspace)) as supervisor:
             registry = build_registry(
                 config,
                 workspace,
@@ -279,7 +279,7 @@ def reconcile_cmd(
         if skip_upstreams:
             report = await run_reconcile(db_path, scope=scope, dry_run=dry_run)
             return report.__dict__
-        async with Supervisor(specs=specs_from_config(cfg)) as sup:
+        async with Supervisor(specs=specs_from_config(cfg), workspace_root=str(workspace)) as sup:
             mempalace = sup.get("mempalace")
 
             async def drawer_lookup(drawer_id: str):

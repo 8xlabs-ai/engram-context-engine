@@ -150,7 +150,7 @@ def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBin
 async def _run(workspace: Path, enable_upstreams: bool) -> None:
     config = load_config(workspace)
     specs = specs_from_config(config) if enable_upstreams else []
-    async with Supervisor(specs=specs) as supervisor:
+    async with Supervisor(specs=specs, workspace_root=str(workspace)) as supervisor:
         registry = build_registry(
             config,
             workspace,

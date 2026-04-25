@@ -25,6 +25,16 @@ async def _main() -> None:
                 inputSchema={"type": "object"},
             ),
             mcp_types.Tool(
+                name="activate_project",
+                description="activate\nUse when targeting a workspace.",
+                inputSchema={"type": "object"},
+            ),
+            mcp_types.Tool(
+                name="check_onboarding_performed",
+                description="check\nUse when warming up.",
+                inputSchema={"type": "object"},
+            ),
+            mcp_types.Tool(
                 name="rename_symbol",
                 description="rename\nPrefer this for renames.",
                 inputSchema={
@@ -66,6 +76,16 @@ async def _main() -> None:
             raise RuntimeError(f"fake-serena asked to fail on {name}")
         if name == "get_current_config":
             return [mcp_types.TextContent(type="text", text='{"ok": true}')]
+        if name == "activate_project":
+            log_path = os.environ.get("FAKE_SERENA_LOG")
+            if log_path:
+                from pathlib import Path as _P
+                _P(log_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a") as fh:
+                    fh.write(json.dumps({"op": "activate_project", "args": arguments}) + "\n")
+            return [mcp_types.TextContent(type="text", text='{"activated": true}')]
+        if name == "check_onboarding_performed":
+            return [mcp_types.TextContent(type="text", text='{"performed": true}')]
         if name == "rename_symbol":
             return [
                 mcp_types.TextContent(
