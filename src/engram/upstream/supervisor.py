@@ -47,7 +47,18 @@ class Supervisor:
 
 
 def specs_from_config(config: Config) -> list[UpstreamSpec]:
+    import os
+
     u = config.upstreams
+    cc_env = {
+        **os.environ,
+        "EMBEDDING_PROVIDER": u.claude_context.embedding_provider,
+        "EMBEDDING_MODEL": u.claude_context.embedding_model,
+        "MILVUS_ADDRESS": u.claude_context.milvus_address,
+    }
+    if u.claude_context.embedding_provider == "Ollama":
+        cc_env["OLLAMA_MODEL"] = u.claude_context.embedding_model
+        cc_env.setdefault("OLLAMA_HOST", "http://localhost:11434")
     return [
         UpstreamSpec(name="serena", command=list(u.serena.command), namespace="code"),
         UpstreamSpec(name="mempalace", command=list(u.mempalace.command), namespace="mem"),
@@ -55,5 +66,6 @@ def specs_from_config(config: Config) -> list[UpstreamSpec]:
             name="claude_context",
             command=list(u.claude_context.command),
             namespace="vec",
+            env=cc_env,
         ),
     ]
