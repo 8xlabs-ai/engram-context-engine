@@ -23,12 +23,30 @@ from engram.tools.mem_add_anchor import (
 from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy, vec_shortener
 from engram.tools.registry import ToolRegistry
 from engram.tools.vec_enrich import make_vec_search_handler
-from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
+from engram.tools.write_hooks import (
+    make_file_edit_interceptor,
+    make_rename_interceptor,
+    make_safe_delete_interceptor,
+)
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor, specs_from_config
 from engram.workers.scheduler import ReconcilerScheduler
 
 log = logging.getLogger("engram.server")
+
+# Serena tools that mutate file content (no symbol-identity change). Each
+# gets a file-edit interceptor that emits EVENT_FILE_REPLACED post-success
+# so the LRU cache evicts entries scoped to the touched path.
+FILE_EDIT_TOOLS = (
+    "replace_symbol_body",
+    "insert_after_symbol",
+    "insert_before_symbol",
+    "replace_content",
+    "insert_at_line",
+    "delete_lines",
+    "replace_lines",
+    "create_text_file",
+)
 
 CONFIG_RELPATH = ".engram/config.yaml"
 
@@ -121,7 +139,7 @@ def _bindings_for(
     bindings: list[ProxyBinding] = []
     serena = supervisor.get("serena")
     if serena is not None:
-        interceptors = {
+        interceptors: dict[str, Any] = {
             "rename_symbol": make_rename_interceptor(
                 anchor_db_path, serena, lambda: supervisor.get("mempalace"), bus=bus
             ),
@@ -129,6 +147,10 @@ def _bindings_for(
                 anchor_db_path, serena, lambda: supervisor.get("mempalace"), bus=bus
             ),
         }
+        for tool_name in FILE_EDIT_TOOLS:
+            interceptors[tool_name] = make_file_edit_interceptor(
+                serena, tool_name, bus=bus
+            )
         bindings.append(ProxyBinding(serena, "code", identity, "B", interceptors))
     mempalace = supervisor.get("mempalace")
     if mempalace is not None:

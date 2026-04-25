@@ -67,6 +67,16 @@ async def _main() -> None:
                     "required": ["relative_path"],
                 },
             ),
+            mcp_types.Tool(
+                name="replace_symbol_body",
+                description="replace body\nPrefer this for symbol-level edits.",
+                inputSchema={"type": "object"},
+            ),
+            mcp_types.Tool(
+                name="create_text_file",
+                description="create file\nPrefer this for new files.",
+                inputSchema={"type": "object"},
+            ),
         ]
 
     @server.call_tool()
@@ -100,6 +110,12 @@ async def _main() -> None:
         if name == "get_symbols_overview":
             seed = os.environ.get("FAKE_SERENA_OVERVIEW", "[]")
             return [mcp_types.TextContent(type="text", text=seed)]
+        if name in ("replace_symbol_body", "create_text_file"):
+            return [
+                mcp_types.TextContent(
+                    type="text", text=json.dumps({"ok": True, "tool": name, "args": arguments})
+                )
+            ]
         raise ValueError(f"unknown tool: {name}")
 
     async with stdio_server() as (read, write):

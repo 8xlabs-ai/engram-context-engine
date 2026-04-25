@@ -12,6 +12,7 @@ Pre-release work in `main`. Will be tagged once a fresh-machine integration run 
 - **LICENSE:** explicit MIT license text.
 - **Hook bus:** in-process pub/sub at `src/engram/events.py` with stable event types (`symbol.renamed`, `symbol.tombstoned`, `file.replaced`, `memory.written`, `memory.deleted`).
 - **LRU cache event subscription:** `LRUCache.subscribe_to(bus)` evicts entries on Link Layer events.
+- **File-edit cache invalidation:** `make_file_edit_interceptor` wraps Serena's eight file-edit tools (`replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_content`, `insert_at_line`, `delete_lines`, `replace_lines`, `create_text_file`) and emits `EVENT_FILE_REPLACED` on success. Closes original task 2.7.
 - **Reconciler scheduler:** `ReconcilerScheduler` runs `reconcile(scope=all)` every `reconcile_interval_hours` (default 24, clamped to ≥60s); records `meta.last_reconcile_at`.
 - **Serena warm-up:** `Supervisor` calls `activate_project` + `check_onboarding_performed` (and `onboarding` if absent) post-connect.
 - **Router benchmarks:** `tests/integration/benchmarks/test_router_paths.py` gates Path A/B/C medians against spec budgets (150 / 100 / 300 ms).

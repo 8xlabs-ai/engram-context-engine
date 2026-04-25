@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from engram.events import (
+    EVENT_FILE_REPLACED,
     EVENT_SYMBOL_RENAMED,
     EVENT_SYMBOL_TOMBSTONED,
     HookBus,
@@ -170,6 +171,59 @@ def make_safe_delete_interceptor(
             )
         return success(
             {"upstream": _structured(result)},
+            meta_extra={
+                "latency_ms": m["latency_ms"],
+                "upstream": "serena",
+                "path_used": "B",
+            },
+        )
+
+    return handler
+
+
+def make_file_edit_interceptor(
+    serena_client: UpstreamClient,
+    upstream_tool: str,
+    *,
+    bus: HookBus | None = None,
+) -> ToolHandler:
+    """Forward a Serena file-edit tool, then emit `file.replaced` on success.
+
+    Used for `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`,
+    `replace_content`, `insert_at_line`, `delete_lines`, `replace_lines`, and
+    `create_text_file`. Closes original task 2.7.
+
+    The interceptor does not open a SQLite tx — these tools mutate file content
+    only, not the symbol-identity table. Anchor cache eviction happens via the
+    bus subscriber on `EVENT_FILE_REPLACED`.
+    """
+
+    async def handler(arguments: dict[str, Any]) -> dict[str, Any]:
+        with latency_meter() as m:
+            relative_path = arguments.get("relative_path")
+            try:
+                result = await serena_client.call_tool(upstream_tool, arguments)
+            except Exception as exc:  # noqa: BLE001
+                return failure(
+                    "upstream-unavailable",
+                    f"serena {upstream_tool} failed: {exc}",
+                    meta_extra={"latency_ms": m["latency_ms"], "upstream": "serena"},
+                )
+            if result.isError:
+                return failure(
+                    "upstream-unavailable",
+                    f"serena {upstream_tool} returned error",
+                    details=_structured(result),
+                    meta_extra={"latency_ms": m["latency_ms"], "upstream": "serena"},
+                )
+
+        if bus is not None and isinstance(relative_path, str) and relative_path:
+            await bus.publish(
+                EVENT_FILE_REPLACED,
+                {"relative_path": relative_path, "tool": upstream_tool},
+            )
+        return success(
+            _structured(result),
             meta_extra={
                 "latency_ms": m["latency_ms"],
                 "upstream": "serena",
