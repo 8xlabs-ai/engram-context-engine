@@ -133,9 +133,12 @@ def register_engram_tools(
 def _register_health(
     registry: ToolRegistry, anchor_db_path: Path, supervisor: Supervisor | None
 ) -> None:
+    # anchor_db_path is .engram/anchors.sqlite under the workspace root.
+    workspace_root = anchor_db_path.parent.parent
+
     async def health_handler(_args: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
-            upstreams = await _probe_all(supervisor)
+            upstreams = await _probe_all(supervisor, workspace_root)
             lag = wal_lag_seconds(anchor_db_path)
             if lag is not None and "mempalace" in upstreams:
                 upstreams["mempalace"]["wal_lag_seconds"] = lag
@@ -778,7 +781,9 @@ def _connect_or_init(path: Path):
 # -----------------------------------------------------------------------------
 
 
-async def _probe_all(supervisor: Supervisor | None) -> dict[str, dict[str, Any]]:
+async def _probe_all(
+    supervisor: Supervisor | None, workspace_root: Path | None = None
+) -> dict[str, dict[str, Any]]:
     upstreams: dict[str, dict[str, Any]] = {
         name: {"ok": False, "reason": "not connected"} for name in PROBE_TOOL
     }
@@ -788,17 +793,20 @@ async def _probe_all(supervisor: Supervisor | None) -> dict[str, dict[str, Any]]
         client = supervisor.get(name)
         if client is None:
             continue
-        upstreams[name] = await _probe_one(client, probe)
+        upstreams[name] = await _probe_one(client, probe, workspace_root)
     return upstreams
 
 
-async def _probe_one(client: UpstreamClient, probe_tool: str) -> dict[str, Any]:
+async def _probe_one(
+    client: UpstreamClient, probe_tool: str, workspace_root: Path | None = None
+) -> dict[str, Any]:
     has_tool = any(t.name == probe_tool for t in client.tools)
     if not has_tool:
         return {"ok": True, "latency_ms": 0.0, "probe": None}
+    args = _probe_args(client.spec.name, workspace_root)
     start = time.perf_counter()
     try:
-        result = await client.call_tool(probe_tool, {})
+        result = await client.call_tool(probe_tool, args)
     except Exception as exc:  # noqa: BLE001
         log.warning("probe %s on %s failed: %s", probe_tool, client.spec.name, exc)
         return {"ok": False, "reason": str(exc), "probe": probe_tool}
@@ -806,6 +814,14 @@ async def _probe_one(client: UpstreamClient, probe_tool: str) -> dict[str, Any]:
     if result.isError:
         return {"ok": False, "reason": "probe returned error", "probe": probe_tool}
     return {"ok": True, "latency_ms": latency_ms, "probe": probe_tool}
+
+
+def _probe_args(upstream: str, workspace_root: Path | None) -> dict[str, Any]:
+    # claude-context's get_indexing_status requires the codebase path; other
+    # probes accept empty args.
+    if upstream == "claude_context" and workspace_root is not None:
+        return {"path": str(workspace_root)}
+    return {}
 
 
 def _roll_up_status(upstreams: dict[str, dict[str, Any]]) -> str:
