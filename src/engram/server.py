@@ -21,7 +21,7 @@ from engram.tools.mem_add_anchor import (
     MEM_ADD_INPUT_SCHEMA,
     make_mem_add_handler,
 )
-from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy
+from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy, vec_shortener
 from engram.tools.registry import ToolRegistry, ToolSpec
 from engram.tools.vec_enrich import make_vec_search_handler
 from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
@@ -142,7 +142,7 @@ def _bindings_for(supervisor: Supervisor, anchor_db_path: Path) -> list[ProxyBin
             ),
         }
         bindings.append(
-            ProxyBinding(claude_context, "vec", identity, "A", vec_interceptors)
+            ProxyBinding(claude_context, "vec", vec_shortener, "A", vec_interceptors)
         )
     return bindings
 

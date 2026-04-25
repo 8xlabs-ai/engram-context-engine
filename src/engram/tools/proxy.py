@@ -34,6 +34,19 @@ def drop_mempalace_prefix(name: str) -> str:
     return name[len(MEM_PREFIX):] if name.startswith(MEM_PREFIX) else name
 
 
+# Per doc 07 §4: vec.* uses verb-shortened names, not the raw upstream names.
+VEC_ALIASES: dict[str, str] = {
+    "index_codebase": "index",
+    "search_code": "search",
+    "clear_index": "clear",
+    "get_indexing_status": "status",
+}
+
+
+def vec_shortener(name: str) -> str:
+    return VEC_ALIASES.get(name, name)
+
+
 def identity(name: str) -> str:
     return name
 
