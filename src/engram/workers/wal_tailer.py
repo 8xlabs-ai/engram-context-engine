@@ -63,7 +63,7 @@ class WalTailer:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval_s)
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     def stop(self) -> None:

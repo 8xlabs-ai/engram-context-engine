@@ -111,7 +111,7 @@ class Config(BaseModel):
     logging: Logging = Field(default_factory=Logging)
 
     @classmethod
-    def load(cls, path: Path) -> "Config":
+    def load(cls, path: Path) -> Config:
         with path.open("r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         return cls.model_validate(data)

@@ -10,9 +10,8 @@ from typing import Any
 import click
 
 from engram import __version__
-from engram.config import EmbeddingProvider, Config, default_config
+from engram.config import Config, EmbeddingProvider, default_config
 from engram.link.store import init_db
-
 
 CONFIG_RELPATH = ".engram/config.yaml"
 DB_RELPATH = ".engram/anchors.sqlite"

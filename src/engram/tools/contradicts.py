@@ -19,11 +19,10 @@ import logging
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 from engram.tools.envelope import failure, latency_meter, success
-from engram.tools.registry import ToolHandler, ToolRegistry, ToolSpec
+from engram.tools.registry import ToolRegistry, ToolSpec
 
 log = logging.getLogger("engram.contradicts")
 

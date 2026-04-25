@@ -5,8 +5,6 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
-
 from engram.tools.proxy import drop_mempalace_prefix, register_proxy
 from engram.tools.registry import ToolRegistry
 from engram.upstream.client import UpstreamClient, UpstreamSpec

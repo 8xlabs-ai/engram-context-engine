@@ -7,8 +7,8 @@ from pathlib import Path
 
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.registry import ToolRegistry
-from engram.upstream.supervisor import Supervisor
 from engram.upstream.client import UpstreamSpec
+from engram.upstream.supervisor import Supervisor
 
 FAKE = Path(__file__).parent.parent / "fixtures" / "fake_upstream.py"
 

@@ -11,9 +11,9 @@ from engram.cli import main as cli_main
 from engram.link.store import (
     init_db,
     open_db,
+    tombstone_symbol,
     upsert_anchor_symbol_memory,
     upsert_symbol,
-    tombstone_symbol,
 )
 from engram.workers.reconciler import reconcile
 

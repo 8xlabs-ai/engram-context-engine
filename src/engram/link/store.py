@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 META_SEEDS: tuple[tuple[str, str], ...] = (
     ("mempalace_wal_cursor", "0"),

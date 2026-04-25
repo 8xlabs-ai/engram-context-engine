@@ -18,12 +18,10 @@ from engram.events import HookBus
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.envelope import failure
 from engram.tools.mem_add_anchor import (
-    MEM_ADD_DESCRIPTION,
-    MEM_ADD_INPUT_SCHEMA,
     make_mem_add_handler,
 )
 from engram.tools.proxy import drop_mempalace_prefix, identity, register_proxy, vec_shortener
-from engram.tools.registry import ToolRegistry, ToolSpec
+from engram.tools.registry import ToolRegistry
 from engram.tools.vec_enrich import make_vec_search_handler
 from engram.tools.write_hooks import make_rename_interceptor, make_safe_delete_interceptor
 from engram.upstream.client import UpstreamClient

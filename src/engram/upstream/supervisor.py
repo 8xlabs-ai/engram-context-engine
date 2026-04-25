@@ -30,7 +30,7 @@ class Supervisor:
     clients: dict[str, UpstreamClient] = field(default_factory=dict)
     _stack: AsyncExitStack | None = field(default=None, init=False)
 
-    async def __aenter__(self) -> "Supervisor":
+    async def __aenter__(self) -> Supervisor:
         self._stack = AsyncExitStack()
         for spec in self.specs:
             client = UpstreamClient(spec)

@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 from engram.link.store import get_symbol, history_for, init_db, open_db, upsert_symbol
-from engram.tools.registry import ToolRegistry
 from engram.tools.write_hooks import (
     _rename_preview,
     make_rename_interceptor,

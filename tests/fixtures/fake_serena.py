@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 
 import mcp.types as mcp_types
 from mcp.server.lowlevel import Server

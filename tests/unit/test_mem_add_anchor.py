@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from engram.link.store import init_db, memory_anchors_for_symbol, open_db
+from engram.link.store import init_db, open_db
 from engram.tools.mem_add_anchor import make_mem_add_handler
 from engram.upstream.client import UpstreamSpec
 from engram.upstream.supervisor import Supervisor

@@ -56,7 +56,7 @@ class ReconcilerScheduler:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=seconds)
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             try:
                 report = await reconcile(
@@ -76,7 +76,7 @@ def _record_pass(db_path: Path) -> None:
         meta_set(
             conn,
             "last_reconcile_at",
-            dt.datetime.now(dt.timezone.utc).isoformat(),
+            dt.datetime.now(dt.UTC).isoformat(),
         )
     finally:
         conn.close()

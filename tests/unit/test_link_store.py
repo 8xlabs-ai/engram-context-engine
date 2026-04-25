@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from engram.link.store import (
-    append_history,
     get_symbol,
     get_symbol_by_id,
     history_for,

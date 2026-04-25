@@ -467,6 +467,17 @@ PYTHONPATH=src .venv/bin/pytest tests/integration/benchmarks/ \
 
 Unit tests use inline fake MCP servers (`tests/fixtures/fake_*.py`) so the full unit suite runs without installing Serena / MemPalace / claude-context wheels. The benchmark suite measures router-internal overhead against deterministic fake sources; per-spec budgets are Path A ≤150 ms / B ≤100 ms / C ≤300 ms warm P50 (typical observed: ~120 / 120 / 200 μs).
 
+### CI
+
+GitHub Actions workflow at repo-root `.github/workflows/engram-ci.yml` runs on every push and PR that touches `engram/**`:
+
+1. `pip install -e '.[dev]'` in a Python 3.13 venv.
+2. `ruff check src tests`.
+3. `mypy src/engram` (non-blocking until strict-typed across all modules).
+4. `pytest tests/unit/ -q`.
+5. `pytest tests/integration/benchmarks/ --benchmark-only` (gates Path A/B/C medians against spec budgets — fails if a router regression pushes any path over).
+6. `engram.*` two-line description lint.
+
 ---
 
 ## License

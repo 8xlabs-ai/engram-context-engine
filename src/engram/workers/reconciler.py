@@ -92,7 +92,7 @@ async def _reconcile_memories(
             stale.append(
                 (int(row["anchor_id"]), int(row["symbol_id"]), str(row["drawer_id"]))
             )
-    for anchor_id, symbol_id, drawer_id in stale:
+    for anchor_id, symbol_id, _drawer_id in stale:
         conn.execute(
             "DELETE FROM anchors_symbol_memory WHERE anchor_id = ?", (anchor_id,)
         )

@@ -43,11 +43,15 @@ packages = ["src/engram"]
 include = ["src/engram", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
-line-length = 100
+line-length = 110
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E741",   # ambiguous variable name (e.g. `l`) — common in tests
+    "UP036",  # py-version block; runtime check stays in cli prereq
+]
 
 [tool.mypy]
 python_version = "3.11"
