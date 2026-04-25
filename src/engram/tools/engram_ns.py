@@ -702,6 +702,10 @@ def _default_vec_search(supervisor: Supervisor | None) -> VecSearch:
     return search
 
 
+MEM_SEARCH_QUERY_MAX = 250  # MemPalace mempalace_search 'query' maxLength.
+MEM_SEARCH_DEFAULT_LIMIT = 10  # router likes a few extra for fusion.
+
+
 def _default_mem_search(supervisor: Supervisor | None) -> MemSearch:
     async def search(query: str) -> list[dict[str, Any]]:
         if supervisor is None:
@@ -709,8 +713,14 @@ def _default_mem_search(supervisor: Supervisor | None) -> MemSearch:
         client = supervisor.get("mempalace")
         if client is None:
             return []
+        keyword_query = _to_keyword_query(query)
+        if not keyword_query:
+            return []
         try:
-            result = await client.call_tool("mempalace_search", {"query": query})
+            result = await client.call_tool(
+                "mempalace_search",
+                {"query": keyword_query, "limit": MEM_SEARCH_DEFAULT_LIMIT},
+            )
         except Exception:  # noqa: BLE001
             return []
         if result.isError:
@@ -725,6 +735,21 @@ def _default_mem_search(supervisor: Supervisor | None) -> MemSearch:
         return []
 
     return search
+
+
+def _to_keyword_query(raw: str) -> str:
+    """Normalize a router query for MemPalace's keyword-only 'query' field.
+
+    - Replace `/` and `.` with spaces (turn `Pipeline/process_batch` into
+      `Pipeline process_batch` — embeddings handle the rest).
+    - Collapse whitespace.
+    - Truncate to 250 characters (MemPalace cap).
+    """
+    if not raw:
+        return ""
+    cleaned = raw.replace("/", " ").replace(".", " ")
+    cleaned = " ".join(cleaned.split())
+    return cleaned[:MEM_SEARCH_QUERY_MAX]
 
 
 def _default_kg_query(supervisor: Supervisor | None) -> KgQuery:
