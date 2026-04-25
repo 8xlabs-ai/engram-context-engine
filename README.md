@@ -1,20 +1,20 @@
-<div align="center">
 
-### Your codebase, your decisions, and your team's memory — all as Claude's context
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-130%20unit%20%2B%203%20benchmarks-brightgreen.svg)](#running-the-test-suite)
-[![MCP](https://img.shields.io/badge/MCP-stdio%20server-purple.svg)](https://modelcontextprotocol.io/)
-[![Documentation](https://img.shields.io/badge/Documentation-📚-orange.svg)](#1-prerequisites)
-[![Built on](https://img.shields.io/badge/built%20on-Serena%20%2B%20MemPalace%20%2B%20Claude%20Context-lightgrey.svg)](#layout)
+### Your codebase, your decisions, and your team's memory — all as your AI's context
 
-</div>
+[License](LICENSE)
+[Python](https://www.python.org/)
+[Node.js](https://nodejs.org/)
+[Tests](#running-the-test-suite)
+[MCP](https://modelcontextprotocol.io/)
+[Documentation](#1-prerequisites)
+[Built on](#layout)
+
+
 
 **Engram** is an MCP server that fuses three retrieval primitives — symbol search ([Serena](https://github.com/oraios/serena)), verbatim memory + temporal knowledge graph ([MemPalace](https://github.com/zilliztech/mempalace)), and vector code search ([Claude Context](https://github.com/zilliztech/claude-context)) — behind one endpoint, with a Link Layer that keeps anchors correct across renames and a Retrieval Router that picks the right path or fuses several with RRF k=60.
 
-🧠 **One MCP, three retrieval primitives.** Symbol-level precision (LSP), verbatim recall (memory + KG), and natural-language code search (vectors) — composed into a single tool surface (~67 tools across `code.*` / `mem.*` / `vec.*` / `engram.*`).
+🧠 **One MCP, three retrieval primitives.** Symbol-level precision (LSP), verbatim recall (memory + KG), and natural-language code search (vectors) — composed into a single tool surface (~67 tools across `code.`* / `mem.*` / `vec.*` / `engram.*`).
 
 🔗 **Anchors that survive code motion.** Memories anchored to symbols stay tied across renames, moves, and tombstones — via a SQLite Link Layer with idempotent inserts, a hook bus that evicts stale cache on `symbol.renamed` / `file.replaced`, and a periodic reconciler.
 
@@ -24,13 +24,78 @@
 
 ---
 
+## What can I do with it?
+
+Four real use cases — plain English, plain diagrams.
+
+### 1. "Why is this code written this way?"
+
+Ask about a function. Engram returns the code, past team discussions, and recorded decisions in one call.
+
+```
+  engram.why("Foo/process")
+            │
+            ▼
+   ┌────  symbol      ◄── Serena (LSP)
+   │
+   ├────  memories    ◄── MemPalace search
+   │
+   └────  facts       ◄── KG query
+
+   ⇒ { symbol, memories, facts }
+```
+
+### 2. "Find code that matches an idea — only where the team has discussed it"
+
+Semantic search, but pre-filtered to chunks that already have anchored memory. Less noise, more signal.
+
+```
+   "hash password bcrypt"
+           │
+    vec.search  ────► chunks
+                        │
+                   join anchors_symbol_memory
+                        │
+                        ▼
+                  filtered hits
+```
+
+### 3. "Rename without losing context"
+
+`code.rename_symbol` updates the symbol and records the rename in the KG. Old memories still resolve — they reference a stable `symbol_id`, not a name that just changed.
+
+```
+   old_name → [DB tx] → Serena rename → [commit] → KG triple (renamed_to)
+                                                     │
+                                                     └─► memories stay attached
+```
+
+### 4. "Where in the code does this decision apply?"
+
+Give Engram a decision name (e.g. `graphql_migration`). It walks the KG, finds related entities, vector-searches code that mentions them, and resolves to enclosing symbols.
+
+```
+   "graphql_migration"
+           │
+        KG query  ────► related entities
+                              │
+                       vec.search per entity
+                              │
+                       Serena resolve
+                              │
+                              ▼
+                       implementations[]
+```
+
+---
+
 A unified coding-agent substrate that composes three open-source MCP servers behind one endpoint:
 
-- **Serena** — LSP-backed symbol search (`code.*`, ~26 tools).
-- **MemPalace** — verbatim memory + temporal knowledge graph (`mem.*`, ~29 tools).
-- **claude-context** — vector code search backed by Milvus (`vec.*`, 4 tools).
+- **Serena** — LSP-backed symbol search (`code.`*, ~26 tools).
+- **MemPalace** — verbatim memory + temporal knowledge graph (`mem.`*, ~29 tools).
+- **claude-context** — vector code search backed by Milvus (`vec.`*, 4 tools).
 
-Engram adds a **Link Layer** (SQLite anchor store keeping symbols ↔ memories ↔ chunks correct across renames and moves) and a **Retrieval Router** (path A discovery / path B precision / path C RRF k=60 fusion) — exposed as 8 composed `engram.*` tools.
+Engram adds a **Link Layer** (SQLite anchor store keeping symbols ↔ memories ↔ chunks correct across renames and moves) and a **Retrieval Router** (path A discovery / path B precision / path C RRF k=60 fusion) — exposed as 8 composed `engram.`* tools.
 
 ```
 agent client (Claude Code / Cursor / Claude Desktop)
@@ -70,14 +135,16 @@ git clone <repo> && cd engram
 
 It is idempotent — safe to re-run. Useful flags:
 
-| Flag | Effect |
-|---|---|
-| `--workspace DIR` | Where `.engram/` lives (default: `$PWD`). |
-| `--skip-compose` | Don't touch Docker (assume Milvus + Ollama already running, or skip them). |
-| `--skip-npm` | Don't install `@zilliz/claude-context-mcp` globally; let `npx` pull lazily. |
-| `--force-init` | Overwrite an existing `.engram/config.yaml`. |
-| `--no-smoke` | Skip the final `engram smoke-test` (faster on cold runs). |
-| `--help` | Print usage banner. |
+
+| Flag              | Effect                                                                      |
+| ----------------- | --------------------------------------------------------------------------- |
+| `--workspace DIR` | Where `.engram/` lives (default: `$PWD`).                                   |
+| `--skip-compose`  | Don't touch Docker (assume Milvus + Ollama already running, or skip them).  |
+| `--skip-npm`      | Don't install `@zilliz/claude-context-mcp` globally; let `npx` pull lazily. |
+| `--force-init`    | Overwrite an existing `.engram/config.yaml`.                                |
+| `--no-smoke`      | Skip the final `engram smoke-test` (faster on cold runs).                   |
+| `--help`          | Print usage banner.                                                         |
+
 
 After it finishes, register `engram-mcp` with your agent client — see §7. If you'd rather drive each step by hand, sections §1–§6 below cover the same ground.
 
@@ -85,12 +152,14 @@ After it finishes, register `engram-mcp` with your agent client — see §7. If 
 
 ## 1. Prerequisites
 
-| Tool | Version | Why |
-|---|---|---|
-| Python | ≥ 3.11, < 3.15 (3.13 or 3.14 OK) | `pyproject.toml` pin; Serena needs ≥3.11 |
-| Node | ≥ 20, < 24 | claude-context-mcp constraint |
-| Docker + `docker compose` | any recent | Milvus + Ollama stack |
-| Platform | macOS or Linux | OS-level supervisor units only for these |
+
+| Tool                      | Version                          | Why                                      |
+| ------------------------- | -------------------------------- | ---------------------------------------- |
+| Python                    | ≥ 3.11, < 3.15 (3.13 or 3.14 OK) | `pyproject.toml` pin; Serena needs ≥3.11 |
+| Node                      | ≥ 20, < 24                       | claude-context-mcp constraint            |
+| Docker + `docker compose` | any recent                       | Milvus + Ollama stack                    |
+| Platform                  | macOS or Linux                   | OS-level supervisor units only for these |
+
 
 `engram init` checks all three. Pass `--skip-prereq-check` to bypass in CI.
 
@@ -127,12 +196,14 @@ docker exec deploy-ollama-1 ollama pull nomic-embed-text   # ~274 MB
 
 Services exposed:
 
-| Service | Port | Image |
-|---|---|---|
-| `etcd` | (internal) | `quay.io/coreos/etcd:v3.5.5` |
-| `minio` | (internal) | `minio/minio:RELEASE.2023-03-20T20-16-18Z` |
-| `milvus-standalone` | `19530` | `milvusdb/milvus:v2.4.9` |
-| `ollama` | `11434` | `ollama/ollama:0.3.12` |
+
+| Service             | Port       | Image                                      |
+| ------------------- | ---------- | ------------------------------------------ |
+| `etcd`              | (internal) | `quay.io/coreos/etcd:v3.5.5`               |
+| `minio`             | (internal) | `minio/minio:RELEASE.2023-03-20T20-16-18Z` |
+| `milvus-standalone` | `19530`    | `milvusdb/milvus:v2.4.9`                   |
+| `ollama`            | `11434`    | `ollama/ollama:0.3.12`                     |
+
 
 ---
 
@@ -243,12 +314,14 @@ claude mcp add engram \
 
 When all three upstreams are up, `tools/list` returns ~67 tools across four namespaces:
 
-| Namespace | Backed by | Count | Notes |
-|---|---|---|---|
-| `code.*` | Serena | ~26 | LSP symbols, file ops; rename/safe_delete intercepted to update Link store + KG |
-| `mem.*` | MemPalace | ~29 | CRUD aliased to `mem.add` / `get` / `list` / `update` / `delete`; `mem.add` accepts optional `anchor_symbol_name_path` + `anchor_relative_path` for one-shot anchoring |
-| `vec.*` | claude-context | 4 | `vec.index` / `search` / `clear` / `status`; results from `vec.search` carry an `enclosing_symbol` field resolved from the Link store or on-demand from Serena |
-| `engram.*` | Engram | 8 | Composed tools — see catalog below |
+
+| Namespace  | Backed by      | Count | Notes                                                                                                                                                                  |
+| ---------- | -------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code.*`   | Serena         | ~26   | LSP symbols, file ops; rename/safe_delete intercepted to update Link store + KG                                                                                        |
+| `mem.*`    | MemPalace      | ~29   | CRUD aliased to `mem.add` / `get` / `list` / `update` / `delete`; `mem.add` accepts optional `anchor_symbol_name_path` + `anchor_relative_path` for one-shot anchoring |
+| `vec.*`    | claude-context | 4     | `vec.index` / `search` / `clear` / `status`; results from `vec.search` carry an `enclosing_symbol` field resolved from the Link store or on-demand from Serena         |
+| `engram.*` | Engram         | 8     | Composed tools — see catalog below                                                                                                                                     |
+
 
 ---
 
@@ -404,31 +477,35 @@ systemctl --user enable --now engram.service
 
 ## 12. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `OPENAI_API_KEY is required for OpenAI embedding provider` | env not propagated to claude-context | pull `cca5674` or later; verify `embedding_provider: Ollama` in config |
-| `Tool mem.add not listed by server` | pre-alias build | pull `0b64ffc` or later |
-| `Tool vec.status not listed by server` | pre-alias build | pull `11784c8` or later |
-| `engram.health` `claude_context.reason="probe returned error"` | probe missing `path` arg | pull `17bc92b` or later |
-| `find_symbol` returns null on first call | Serena LSP not warm yet | wait a few seconds, or call `code.activate_project` first (open follow-up) |
-| `mem.search` returns 0 hits despite drawers present | `query` arg shape may need tuning | open follow-up — pass through with explicit `top_k` / wing filter |
-| `engram-mcp` refuses to start | no `ENGRAM_WORKSPACE` and no `.engram/config.yaml` in CWD | set `ENGRAM_WORKSPACE` in the MCP client config |
-| `wal_lag_seconds > 60` in health | WAL tailer not reading | check `~/.mempalace/wal/write_log.jsonl` exists and is appended to |
+
+| Symptom                                                        | Cause                                                     | Fix                                                                        |
+| -------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `OPENAI_API_KEY is required for OpenAI embedding provider`     | env not propagated to claude-context                      | pull `cca5674` or later; verify `embedding_provider: Ollama` in config     |
+| `Tool mem.add not listed by server`                            | pre-alias build                                           | pull `0b64ffc` or later                                                    |
+| `Tool vec.status not listed by server`                         | pre-alias build                                           | pull `11784c8` or later                                                    |
+| `engram.health` `claude_context.reason="probe returned error"` | probe missing `path` arg                                  | pull `17bc92b` or later                                                    |
+| `find_symbol` returns null on first call                       | Serena LSP not warm yet                                   | wait a few seconds, or call `code.activate_project` first (open follow-up) |
+| `mem.search` returns 0 hits despite drawers present            | `query` arg shape may need tuning                         | open follow-up — pass through with explicit `top_k` / wing filter          |
+| `engram-mcp` refuses to start                                  | no `ENGRAM_WORKSPACE` and no `.engram/config.yaml` in CWD | set `ENGRAM_WORKSPACE` in the MCP client config                            |
+| `wal_lag_seconds > 60` in health                               | WAL tailer not reading                                    | check `~/.mempalace/wal/write_log.jsonl` exists and is appended to         |
+
 
 ---
 
 ## Recently fixed
 
-| Commit | Fix |
-|---|---|
+
+| Commit    | Fix                                                                                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cca5674` | Propagate `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `MILVUS_ADDRESS`, `OLLAMA_MODEL`, `OLLAMA_HOST` to the claude-context subprocess. Caught by integration: claude-context defaulted to OpenAI provider, demanded `OPENAI_API_KEY`, crashed at startup. |
-| `17bc92b` | claude-context probe now passes `{"path": workspace_root}` to `get_indexing_status`. `engram.health` was reporting `degraded` despite working tools. Same commit also archived `init-engram` change → 34 requirements promoted to `openspec/specs/`. |
-| `0b64ffc` | `mem.*` CRUD aliases — `add` / `get` / `list` / `update` / `delete` collapse the `_drawer` / `_drawers` suffix per doc 07 §4. Previously registered as `mem.add_drawer` etc. |
-| `11784c8` | `vec.*` aliases — `index` / `search` / `clear` / `status` map to claude-context's verbose names per doc 07 §4. Previously registered as `vec.index_codebase` etc. |
-| `031f52b` | Supervisor warms Serena (`activate_project` + `check_onboarding_performed` + optional `onboarding`) after connect. Resolves the "find_symbol returns null on first call against a fresh `--project`" gotcha. |
-| `6b6e9f3` | `mem.search` keyword normalization: `Pipeline/process_batch` → `Pipeline process_batch`, max 250 chars, explicit `limit=10`. MemPalace's schema requires keyword-only queries. |
-| (HEAD-3) | `ReconcilerScheduler` runs `reconcile(scope=all)` every `reconcile_interval_hours` (default 24, clamped to ≥60s). Records `meta.last_reconcile_at`. Closes original task 4.5. |
-| (HEAD-2) | In-process hook bus (`src/engram/events.py`); LRU cache subscribes and evicts on `symbol.renamed` / `symbol.tombstoned` / `file.replaced`. Closes original task 3.7. |
+| `17bc92b` | claude-context probe now passes `{"path": workspace_root}` to `get_indexing_status`. `engram.health` was reporting `degraded` despite working tools. Same commit also archived `init-engram` change → 34 requirements promoted to `openspec/specs/`.    |
+| `0b64ffc` | `mem.*` CRUD aliases — `add` / `get` / `list` / `update` / `delete` collapse the `_drawer` / `_drawers` suffix per doc 07 §4. Previously registered as `mem.add_drawer` etc.                                                                            |
+| `11784c8` | `vec.*` aliases — `index` / `search` / `clear` / `status` map to claude-context's verbose names per doc 07 §4. Previously registered as `vec.index_codebase` etc.                                                                                       |
+| `031f52b` | Supervisor warms Serena (`activate_project` + `check_onboarding_performed` + optional `onboarding`) after connect. Resolves the "find_symbol returns null on first call against a fresh `--project`" gotcha.                                            |
+| `6b6e9f3` | `mem.search` keyword normalization: `Pipeline/process_batch` → `Pipeline process_batch`, max 250 chars, explicit `limit=10`. MemPalace's schema requires keyword-only queries.                                                                          |
+| (HEAD-3)  | `ReconcilerScheduler` runs `reconcile(scope=all)` every `reconcile_interval_hours` (default 24, clamped to ≥60s). Records `meta.last_reconcile_at`. Closes original task 4.5.                                                                           |
+| (HEAD-2)  | In-process hook bus (`src/engram/events.py`); LRU cache subscribes and evicts on `symbol.renamed` / `symbol.tombstoned` / `file.replaced`. Closes original task 3.7.                                                                                    |
+
 
 All four MCP-naming/env bugs caught only by real-upstream integration; pure unit tests would not have surfaced them.
 
@@ -436,13 +513,15 @@ All four MCP-naming/env bugs caught only by real-upstream integration; pure unit
 
 ## Known gaps / TODO
 
-| Item | Status | Workaround / note |
-|---|---|---|
-| **2.7** — write-path cache invalidation on `code.replace_*` / `insert_*` / `create_text_file` | open | Hook bus now exists; just need to wire `EVENT_FILE_REPLACED` emit on these proxy paths. |
-| **7.3** — PyPI `0.1.0` release | release-ready | Workflow `engram-release.yml` + `CHANGELOG.md` shipped; awaiting fresh-machine setup.sh validation + repo secret config before tag. |
-| **7.4** — optional upstream PRs (PR-SER-1 `on_tool_invoked`, PR-CC-1 `sync_now`) | deferred | Both additive; current code works without them. |
-| **Q-1.7-WATCHDOG** (design.md) | deferred | In-process Supervisor reconnect collides with anyio task-group scopes. OS unit templates ship instead — see §11. |
-| **`vec.search` end-to-end with real Ollama** | partial | Pipeline works (`vec.index` + `vec.status` + `vec.search` all execute). First index against real Ollama is multi-minute; no worked example shipped to avoid misleading expectations. |
+
+| Item                                                                                          | Status        | Workaround / note                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **2.7** — write-path cache invalidation on `code.replace_`* / `insert_*` / `create_text_file` | open          | Hook bus now exists; just need to wire `EVENT_FILE_REPLACED` emit on these proxy paths.                                                                                              |
+| **7.3** — PyPI `0.1.0` release                                                                | release-ready | Workflow `engram-release.yml` + `CHANGELOG.md` shipped; awaiting fresh-machine setup.sh validation + repo secret config before tag.                                                  |
+| **7.4** — optional upstream PRs (PR-SER-1 `on_tool_invoked`, PR-CC-1 `sync_now`)              | deferred      | Both additive; current code works without them.                                                                                                                                      |
+| **Q-1.7-WATCHDOG** (design.md)                                                                | deferred      | In-process Supervisor reconnect collides with anyio task-group scopes. OS unit templates ship instead — see §11.                                                                     |
+| `**vec.search` end-to-end with real Ollama**                                                  | partial       | Pipeline works (`vec.index` + `vec.status` + `vec.search` all execute). First index against real Ollama is multi-minute; no worked example shipped to avoid misleading expectations. |
+
 
 ---
 
