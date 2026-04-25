@@ -26,66 +26,87 @@
 
 ## What can I do with it?
 
-Four real use cases — plain English, plain diagrams.
+Four real-world scenarios with the actual tool calls.
 
-### 1. "Why is this code written this way?"
+### 1. New hire asks: "Why is the password reset flow doing a 90-second delay?"
 
-Ask about a function. Engram returns the code, past team discussions, and recorded decisions in one call.
-
-```
-  engram.why("Foo/process")
-            │
-            ▼
-   ┌────  symbol      ◄── Serena (LSP)
-   │
-   ├────  memories    ◄── MemPalace search
-   │
-   └────  facts       ◄── KG query
-
-   ⇒ { symbol, memories, facts }
-```
-
-### 2. "Find code that matches an idea — only where the team has discussed it"
-
-Semantic search, but pre-filtered to chunks that already have anchored memory. Less noise, more signal.
+Without Engram: grep, ask in Slack, dig through PR descriptions. With Engram: one call.
 
 ```
-   "hash password bcrypt"
-           │
-    vec.search  ────► chunks
-                        │
-                   join anchors_symbol_memory
-                        │
-                        ▼
-                  filtered hits
+agent: engram.why(name_path="AuthService/reset_password",
+                  relative_path="src/auth/service.py")
+
+         │
+         ▼
+  symbol   : src/auth/service.py:142–210, kind=method
+  memories : "Decision 2025-09: 90s delay throttles credential-stuffing
+              after the incident in INC-4421. PM signed off."
+  facts    : (auth_reset, throttled_by, 90s_delay) valid_from 2025-09-12
 ```
 
-### 3. "Rename without losing context"
+Onboarding goes from "ping a senior" to "read the answer".
 
-`code.rename_symbol` updates the symbol and records the rename in the KG. Old memories still resolve — they reference a stable `symbol_id`, not a name that just changed.
+### 2. On-call engineer at 3am: "Has anyone seen this `Pipeline.process_batch` rate-limit error before?"
 
-```
-   old_name → [DB tx] → Serena rename → [commit] → KG triple (renamed_to)
-                                                     │
-                                                     └─► memories stay attached
-```
-
-### 4. "Where in the code does this decision apply?"
-
-Give Engram a decision name (e.g. `graphql_migration`). It walks the KG, finds related entities, vector-searches code that mentions them, and resolves to enclosing symbols.
+Hit the symbol, get every prior discussion + all related decisions in one shot.
 
 ```
-   "graphql_migration"
-           │
-        KG query  ────► related entities
-                              │
-                       vec.search per entity
-                              │
-                       Serena resolve
-                              │
-                              ▼
-                       implementations[]
+agent: engram.why(name_path="Pipeline/process_batch",
+                  relative_path="src/pipeline.py")
+
+  → memories: 3 drawers from #incidents wing — same error in Q1, root
+              cause was upstream API cap of 100 rows; fix shipped in
+              PR-2247.
+  → facts:    (process_batch, batch_size, 100) — DON'T raise it.
 ```
+
+No need to wake anyone up. Past on-call's notes are anchored to the symbol.
+
+### 3. Pre-refactor: "We need to rename `LegacyUserService` to `UserService` across the repo."
+
+`code.rename_symbol` runs through Engram. Old anchored memories don't break.
+
+```
+agent: code.rename_symbol(name_path="LegacyUserService",
+                          relative_path="src/users/legacy.py",
+                          new_name="UserService")
+
+   ┌──────────────────────────────────────────┐
+   │ 1. Engram BEGIN tx                       │
+   │ 2. Update symbols.name_path              │
+   │ 3. Append symbol_history (engram-rename) │
+   │ 4. Forward to Serena rename_symbol       │  ← LSP-grade, all refs
+   │ 5. COMMIT                                │
+   │ 6. KG triple: renamed_to UserService     │
+   └──────────────────────────────────────────┘
+
+  → 12 anchored drawers still resolve via stable symbol_id.
+  → KG records the rename so future searches on "LegacyUserService"
+    still find the post-rename code.
+```
+
+The "old documentation that points at a renamed function" problem disappears.
+
+### 4. Compliance review: "Where does the GDPR 30-day-retention decision actually apply in code?"
+
+Decision lives in MemPalace's KG. Engram walks KG → vector-searches related terms → resolves enclosing symbols.
+
+```
+agent: engram.where_does_decision_apply(decision_entity="gdpr_retention_30d")
+
+  KG       : (gdpr_retention_30d, applies_to, user_logs)
+             (gdpr_retention_30d, applies_to, audit_trail)
+                 │
+        vec.search per related term
+                 │
+                 ▼
+  implementations:
+    - src/users/log_purger.py:34   (UserLogPurger.run)
+    - src/audit/trail.py:88        (AuditTrail.expire)
+    - src/admin/jobs.py:201        (run_retention_sweep)
+```
+
+Auditor gets a list of every place the decision lives. No spreadsheet drift.
 
 ---
 
