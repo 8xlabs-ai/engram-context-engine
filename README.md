@@ -1,16 +1,17 @@
-
+<div align="center">
 
 ### Your codebase, your decisions, and your team's memory — all as your AI's context
 
-[License](LICENSE)
-[Python](https://www.python.org/)
-[Node.js](https://nodejs.org/)
-[Tests](#running-the-test-suite)
-[MCP](https://modelcontextprotocol.io/)
-[Documentation](#1-prerequisites)
-[Built on](#layout)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-133%20unit%20%2B%203%20benchmarks-brightgreen.svg)](#running-the-test-suite)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20server-purple.svg?logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
+[![Documentation](https://img.shields.io/badge/Documentation-📚-orange.svg)](#1-prerequisites)
+[![Built on](https://img.shields.io/badge/built%20on-Serena%20%2B%20MemPalace%20%2B%20Claude%20Context-lightgrey.svg)](#layout)
+[![GitHub stars](https://img.shields.io/github/stars/8xlabs-ai/engram-context-engine?style=social)](https://github.com/8xlabs-ai/engram-context-engine)
 
-
+</div>
 
 **Engram** is an MCP server that fuses three retrieval primitives — symbol search ([Serena](https://github.com/oraios/serena)), verbatim memory + temporal knowledge graph ([MemPalace](https://github.com/zilliztech/mempalace)), and vector code search ([Claude Context](https://github.com/zilliztech/claude-context)) — behind one endpoint, with a Link Layer that keeps anchors correct across renames and a Retrieval Router that picks the right path or fuses several with RRF k=60.
 
@@ -26,9 +27,10 @@
 
 ## What can I do with it?
 
-Four real-world scenarios with the actual tool calls.
+Four real-world scenarios with the actual tool calls. Click any to expand.
 
-### 1. New hire asks: "Why is the password reset flow doing a 90-second delay?"
+<details>
+<summary><b>1. New hire asks: "Why is the password reset flow doing a 90-second delay?"</b></summary>
 
 Without Engram: grep, ask in Slack, dig through PR descriptions. With Engram: one call.
 
@@ -46,7 +48,10 @@ agent: engram.why(name_path="AuthService/reset_password",
 
 Onboarding goes from "ping a senior" to "read the answer".
 
-### 2. On-call engineer at 3am: "Has anyone seen this `Pipeline.process_batch` rate-limit error before?"
+</details>
+
+<details>
+<summary><b>2. On-call engineer at 3am: "Has anyone seen this <code>Pipeline.process_batch</code> rate-limit error before?"</b></summary>
 
 Hit the symbol, get every prior discussion + all related decisions in one shot.
 
@@ -62,7 +67,10 @@ agent: engram.why(name_path="Pipeline/process_batch",
 
 No need to wake anyone up. Past on-call's notes are anchored to the symbol.
 
-### 3. Pre-refactor: "We need to rename `LegacyUserService` to `UserService` across the repo."
+</details>
+
+<details>
+<summary><b>3. Pre-refactor: "We need to rename <code>LegacyUserService</code> to <code>UserService</code> across the repo."</b></summary>
 
 `code.rename_symbol` runs through Engram. Old anchored memories don't break.
 
@@ -87,7 +95,10 @@ agent: code.rename_symbol(name_path="LegacyUserService",
 
 The "old documentation that points at a renamed function" problem disappears.
 
-### 4. Compliance review: "Where does the GDPR 30-day-retention decision actually apply in code?"
+</details>
+
+<details>
+<summary><b>4. Compliance review: "Where does the GDPR 30-day-retention decision actually apply in code?"</b></summary>
 
 Decision lives in MemPalace's KG. Engram walks KG → vector-searches related terms → resolves enclosing symbols.
 
@@ -107,6 +118,8 @@ agent: engram.where_does_decision_apply(decision_entity="gdpr_retention_30d")
 ```
 
 Auditor gets a list of every place the decision lives. No spreadsheet drift.
+
+</details>
 
 ---
 
