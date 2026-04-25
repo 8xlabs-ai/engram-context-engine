@@ -1,4 +1,32 @@
+<div align="center">
+
 # Engram
+
+🆕 **Just need vector code search?** Check out [Claude Context](https://github.com/zilliztech/claude-context) — Engram's vector layer — for a focused codebase-search MCP server. Engram composes it with two more retrieval primitives.
+
+### Your codebase, your decisions, and your team's memory — all as Claude's context
+
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-130%20unit%20%2B%203%20benchmarks-brightgreen.svg)](#running-the-test-suite)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20server-purple.svg)](https://modelcontextprotocol.io/)
+[![Documentation](https://img.shields.io/badge/Documentation-📚-orange.svg)](#1-prerequisites)
+[![Built on](https://img.shields.io/badge/built%20on-Serena%20%2B%20MemPalace%20%2B%20Claude%20Context-lightgrey.svg)](#layout)
+
+</div>
+
+**Engram** is an MCP server that fuses three retrieval primitives — symbol search ([Serena](https://github.com/oraios/serena)), verbatim memory + temporal knowledge graph ([MemPalace](https://github.com/zilliztech/mempalace)), and vector code search ([Claude Context](https://github.com/zilliztech/claude-context)) — behind one endpoint, with a Link Layer that keeps anchors correct across renames and a Retrieval Router that picks the right path or fuses several with RRF k=60.
+
+🧠 **One MCP, three retrieval primitives.** Symbol-level precision (LSP), verbatim recall (memory + KG), and natural-language code search (vectors) — composed into a single tool surface (~67 tools across `code.*` / `mem.*` / `vec.*` / `engram.*`).
+
+🔗 **Anchors that survive code motion.** Memories anchored to symbols stay tied across renames, moves, and tombstones — via a SQLite Link Layer with idempotent inserts, a hook bus that evicts stale cache on `symbol.renamed` / `file.replaced`, and a periodic reconciler.
+
+⚡ **One query, the right path.** A classifier picks discovery (Path A), precision (Path B), or fused (Path C) RRF k=60 retrieval — so you don't burn round trips deciding which upstream to call. Warm P50 budgets enforced in CI: A ≤150 ms / B ≤100 ms / C ≤300 ms.
+
+📐 **Built on three open primitives, not a replacement.** Engram is a thin orchestration layer over Serena, MemPalace, and Claude Context — it composes them, doesn't reimplement them. Credit where due: this README and the project structure are inspired by [Claude Context](https://github.com/zilliztech/claude-context), which Engram uses as its vector layer.
+
+---
 
 A unified coding-agent substrate that composes three open-source MCP servers behind one endpoint:
 
