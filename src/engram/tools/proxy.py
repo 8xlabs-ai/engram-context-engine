@@ -17,8 +17,20 @@ NameShortener = Callable[[str], str]
 
 MEM_PREFIX = "mempalace_"
 
+# Per doc 07 §4 the user-facing surface uses CRUD-shortened names rather than
+# raw drawer/_drawers suffixes. Map upstream → user-facing.
+MEM_ALIASES: dict[str, str] = {
+    "mempalace_add_drawer": "add",
+    "mempalace_get_drawer": "get",
+    "mempalace_delete_drawer": "delete",
+    "mempalace_update_drawer": "update",
+    "mempalace_list_drawers": "list",
+}
+
 
 def drop_mempalace_prefix(name: str) -> str:
+    if name in MEM_ALIASES:
+        return MEM_ALIASES[name]
     return name[len(MEM_PREFIX):] if name.startswith(MEM_PREFIX) else name
 
 

@@ -25,7 +25,13 @@ def _spec(name: str, namespace: str, prefix: str) -> UpstreamSpec:
 
 
 def test_drop_mempalace_prefix() -> None:
-    assert drop_mempalace_prefix("mempalace_add_drawer") == "add_drawer"
+    # CRUD aliases per doc 07 §4: collapse the _drawer / _drawers suffix.
+    assert drop_mempalace_prefix("mempalace_add_drawer") == "add"
+    assert drop_mempalace_prefix("mempalace_get_drawer") == "get"
+    assert drop_mempalace_prefix("mempalace_list_drawers") == "list"
+    # Other mempalace_ tools just drop the prefix.
+    assert drop_mempalace_prefix("mempalace_search") == "search"
+    assert drop_mempalace_prefix("mempalace_kg_query") == "kg_query"
     assert drop_mempalace_prefix("no_prefix") == "no_prefix"
 
 
