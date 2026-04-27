@@ -7,6 +7,7 @@ from pathlib import Path
 from engram.link.store import init_db, meta_get
 from engram.workers.wal_tailer import (
     META_CURSOR_KEY,
+    META_INODE_KEY,
     WalTailer,
     wal_lag_seconds,
 )
@@ -147,3 +148,87 @@ def test_wal_lag_seconds_reports_after_event(tmp_path: Path) -> None:
     lag = wal_lag_seconds(db)
     assert lag is not None
     assert 0 <= lag < 5
+
+
+def test_tailer_persists_inode_meta(tmp_path: Path) -> None:
+    db = tmp_path / "anchors.sqlite"
+    init_db(db).close()
+    wal = tmp_path / "wal" / "write_log.jsonl"
+    _write_wal_lines(wal, [{"op": "add_drawer", "drawer_id": "D0"}])
+
+    t = WalTailer(wal_path=wal, db_path=db, poll_interval_s=0.01)
+    _drive(t)
+
+    expected_inode = wal.stat().st_ino
+    conn = init_db(db)
+    try:
+        stored = int(meta_get(conn, META_INODE_KEY) or "0")
+        assert stored == expected_inode
+    finally:
+        conn.close()
+
+
+def test_tailer_silent_reset_on_inode_change(
+    tmp_path: Path, caplog
+) -> None:
+    """Rotation (different inode) resets cursor without a 'truncated' warning."""
+    db = tmp_path / "anchors.sqlite"
+    init_db(db).close()
+    wal = tmp_path / "wal" / "write_log.jsonl"
+    _write_wal_lines(wal, [{"op": "add_drawer", "drawer_id": f"D{i}"} for i in range(3)])
+
+    captured: list[dict] = []
+
+    async def h(e: dict) -> None:
+        captured.append(e)
+
+    t = WalTailer(wal_path=wal, db_path=db, poll_interval_s=0.01)
+    t.on_event(h)
+    _drive(t)
+    first_inode = wal.stat().st_ino
+
+    # Rotation: unlink + recreate gives a new inode on most filesystems.
+    wal.unlink()
+    _write_wal_lines(wal, [{"op": "add_drawer", "drawer_id": "fresh"}])
+    second_inode = wal.stat().st_ino
+    if second_inode == first_inode:  # pragma: no cover - filesystem-dependent
+        return  # FS reused the inode; the same-inode path is exercised elsewhere.
+
+    with caplog.at_level("WARNING", logger="engram.wal_tailer"):
+        _drive(t)
+
+    assert [e["drawer_id"] for e in captured] == ["D0", "D1", "D2", "fresh"]
+    assert not any("truncated in place" in r.message for r in caplog.records)
+
+
+def test_tailer_warns_on_in_place_truncation(tmp_path: Path, caplog) -> None:
+    """Same inode but smaller size = real anomaly; logs a warning."""
+    db = tmp_path / "anchors.sqlite"
+    init_db(db).close()
+    wal = tmp_path / "wal" / "write_log.jsonl"
+    _write_wal_lines(wal, [{"op": "add_drawer", "drawer_id": f"D{i}"} for i in range(3)])
+
+    t = WalTailer(wal_path=wal, db_path=db, poll_interval_s=0.01)
+    _drive(t)
+    inode_before = wal.stat().st_ino
+
+    # Truncate in place — opening with 'w' and writing small content keeps the
+    # inode on POSIX filesystems.
+    with wal.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"op": "add_drawer", "drawer_id": "post"}) + "\n")
+    inode_after = wal.stat().st_ino
+    if inode_after != inode_before:  # pragma: no cover - filesystem-dependent
+        return  # FS allocated a new inode; the rotation path is tested elsewhere.
+
+    captured: list[dict] = []
+
+    async def h(e: dict) -> None:
+        captured.append(e)
+
+    t.handlers.append(h)
+
+    with caplog.at_level("WARNING", logger="engram.wal_tailer"):
+        _drive(t)
+
+    assert any("truncated in place" in r.message for r in caplog.records)
+    assert [e["drawer_id"] for e in captured] == ["post"]

@@ -22,6 +22,18 @@ log = logging.getLogger("engram.events")
 
 # Event types — keep this small + stable. Adding new types is non-breaking;
 # renaming or removing them is breaking. See doc 05 §6 for the contract.
+#
+# EVENT_FILE_REPLACED payload (v2):
+#   {
+#     "relative_path": str,                    # required
+#     "change_type": "edit"|"write"|"delete"|"notebook_edit",
+#     "source": "engram_write_hook"|"claude_code_hook"|"manual",
+#     "tool": str | None,                      # tool that performed the change
+#     "agent": str | None,                     # "engram" | "claude_code" | ...
+#     "conversation_id": str | None,           # Claude Code session_id
+#     "tool_use_id": str | None,
+#     "ts": float | None,                      # epoch seconds
+#   }
 EVENT_SYMBOL_RENAMED = "symbol.renamed"
 EVENT_SYMBOL_TOMBSTONED = "symbol.tombstoned"
 EVENT_FILE_REPLACED = "file.replaced"

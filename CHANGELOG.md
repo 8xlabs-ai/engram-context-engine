@@ -28,6 +28,7 @@ Pre-release work in `main`. Will be tagged once a fresh-machine integration run 
 - `engram.health` claude-context probe sends `{"path": workspace_root}`; previously omitted, causing `degraded` status despite working tools.
 - `claude_context` upstream subprocess now receives `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` / `MILVUS_ADDRESS` / `OLLAMA_MODEL` / `OLLAMA_HOST` env vars from config.
 - ruff: `line-length=110`; ignores `E741` and `UP036`.
+- `engram.why` result envelope adds `chunks` and `fused` fields (additive — no schema break for callers indexing by name). `meta` adds `sources_used` and (when applicable) `warnings`.
 
 ### Fixed
 
@@ -37,6 +38,9 @@ Pre-release work in `main`. Will be tagged once a fresh-machine integration run 
   - `0b64ffc` `mem.*` CRUD aliases.
   - `11784c8` `vec.*` aliases.
   - `031f52b` Serena onboarding warm-up.
+- `engram.why` now wires Path A and Path C through `RouterDispatcher`. Path A returns `chunks` from `vec_search` (previously returned `mem_search` results). Path C runs all sources in parallel and fuses with RRF k=60 (previously silently dropped `free_query` and ran the same code as Path B). The deferred TODO at `src/engram/tools/engram_ns.py` is resolved. The `symbol-not-found` failure contract is preserved via an upfront `symbol_lookup` short-circuit before the dispatcher runs.
+- `engram supervisor show` works when installed from a wheel. Templates moved from `deploy/units/` (not shipped — wheel only includes `src/engram`) to `src/engram/deploy/units/` and read via `importlib.resources.files("engram").joinpath("deploy/units/<name>")`. The previous `joinpath("../deploy/units/...")` was undefined-behavior parent traversal under `importlib.resources`, and the `Path(__file__).parents[2]` fallback only worked from the source tree.
+- `engram.where_does_decision_apply` now resolves each chunk's `enclosing_symbol` from its line range (anchor-cache → Serena `get_symbols_overview` + innermost-symbol-at-span), via the shared `vec_enrich.resolve_chunk_symbol` helper. Previously the fallback called `symbol_lookup(chunk.get("symbol_name_path", term), rel)` where `term` was a decision-entity string like `gdpr_retention_30d` — Serena returns `None` for that, so every implementation came back with `symbol: None` in production. The unused `symbol_lookup` parameter was dropped from `_register_where_does_decision_apply`; a new `chunk_symbol_resolver` callable is plumbed through `register_engram_tools` (test-injectable, defaults to a Serena+anchor-DB closure).
 
 ### Tests
 

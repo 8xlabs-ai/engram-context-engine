@@ -1,4 +1,4 @@
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE IF NOT EXISTS symbols (
     symbol_id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,4 +78,26 @@ CREATE TABLE IF NOT EXISTS meta (
     key             TEXT PRIMARY KEY,
     value           TEXT NOT NULL,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS change_log (
+    change_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts               TEXT NOT NULL DEFAULT (datetime('now')),
+    relative_path    TEXT NOT NULL,
+    change_type      TEXT NOT NULL,
+    tool             TEXT,
+    agent            TEXT,
+    conversation_id  TEXT,
+    tool_use_id      TEXT,
+    source           TEXT NOT NULL,
+    reindex_state    TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_conv ON change_log(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_change_log_path_ts ON change_log(relative_path, ts);
+
+CREATE TABLE IF NOT EXISTS dirty_files (
+    relative_path    TEXT PRIMARY KEY,
+    first_dirty_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_dirty_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    generation_seen  INTEGER NOT NULL DEFAULT 0
 );

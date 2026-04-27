@@ -25,7 +25,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from engram.link.store import append_history, open_db
+from engram.link.store import (
+    append_history,
+    clear_dirty_file,
+    dirty_file_paths,
+    mark_reindexed,
+    open_db,
+)
 
 log = logging.getLogger("engram.reconciler")
 
@@ -51,7 +57,16 @@ async def reconcile(
     scope: Scope = "all",
     dry_run: bool = False,
     drawer_lookup: DrawerLookup | None = None,
+    paths: list[str] | None = None,
 ) -> ReconcileReport:
+    """Run the reconciler.
+
+    `paths` restricts the chunk sweep to a specific set of relative paths
+    (typically those marked dirty in `dirty_files`). When `paths` resolves
+    to a non-empty list, change_log rows for each path are flipped to
+    `reindex_state='reindexed'` and the dirty_files entry is cleared on
+    successful (non-dry-run) completion.
+    """
     report = ReconcileReport()
     conn = open_db(db_path)
     try:
@@ -60,7 +75,7 @@ async def reconcile(
         if scope in ("memories", "all"):
             await _reconcile_memories(conn, report, drawer_lookup)
         if scope in ("chunks", "all"):
-            _reconcile_chunks(conn, report)
+            _reconcile_chunks(conn, report, paths=paths)
         if scope in ("symbols", "all"):
             # Symbol-truth reconciliation requires Serena; stub out until we
             # plumb symbol_lookup into the reconciler. Count as scanned but
@@ -68,9 +83,24 @@ async def reconcile(
             report.scanned["symbols"] = _count(conn, "symbols")
         if dry_run:
             conn.execute("ROLLBACK")
+        elif paths and scope in ("chunks", "all"):
+            for relative_path in paths:
+                mark_reindexed(conn, relative_path)
+                clear_dirty_file(conn, relative_path)
     finally:
         conn.close()
     return report
+
+
+def collect_dirty_paths(db_path: Path) -> list[str]:
+    """Return the current dirty_files path list (empty if DB absent)."""
+    if not db_path.exists():
+        return []
+    conn = open_db(db_path)
+    try:
+        return dirty_file_paths(conn)
+    finally:
+        conn.close()
 
 
 async def _reconcile_memories(
@@ -107,14 +137,30 @@ async def _reconcile_memories(
         report.changed["tombstones"] += 1
 
 
-def _reconcile_chunks(conn: sqlite3.Connection, report: ReconcileReport) -> None:
+def _reconcile_chunks(
+    conn: sqlite3.Connection,
+    report: ReconcileReport,
+    *,
+    paths: list[str] | None = None,
+) -> None:
     # Drop chunk anchors whose symbol is tombstoned.
-    rows = conn.execute(
-        "SELECT asc_.anchor_id "
-        "FROM anchors_symbol_chunk asc_ "
-        "JOIN symbols s ON s.symbol_id = asc_.symbol_id "
-        "WHERE s.tombstoned_at IS NOT NULL"
-    ).fetchall()
+    if paths:
+        placeholders = ",".join("?" for _ in paths)
+        rows = conn.execute(
+            "SELECT asc_.anchor_id "
+            "FROM anchors_symbol_chunk asc_ "
+            "JOIN symbols s ON s.symbol_id = asc_.symbol_id "
+            f"WHERE asc_.relative_path IN ({placeholders}) "
+            "AND s.tombstoned_at IS NOT NULL",
+            tuple(paths),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT asc_.anchor_id "
+            "FROM anchors_symbol_chunk asc_ "
+            "JOIN symbols s ON s.symbol_id = asc_.symbol_id "
+            "WHERE s.tombstoned_at IS NOT NULL"
+        ).fetchall()
     report.scanned["chunks"] = _count(conn, "anchors_symbol_chunk")
     for row in rows:
         conn.execute(

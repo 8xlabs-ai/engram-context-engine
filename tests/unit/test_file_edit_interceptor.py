@@ -47,6 +47,10 @@ def test_file_edit_emits_file_replaced_event(tmp_path: Path) -> None:
     assert len(received) == 1
     assert received[0]["relative_path"] == "src/foo.py"
     assert received[0]["tool"] == "replace_symbol_body"
+    assert received[0]["change_type"] == "edit"
+    assert received[0]["source"] == "engram_write_hook"
+    assert received[0]["agent"] == "engram"
+    assert isinstance(received[0]["ts"], float)
 
 
 def test_file_edit_failure_does_not_emit_event(tmp_path: Path) -> None:

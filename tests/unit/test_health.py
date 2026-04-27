@@ -79,3 +79,31 @@ def test_health_status_down_when_no_supervisor(tmp_path: Path) -> None:
         assert payload["result"]["status"] == "down"
 
     asyncio.run(run())
+
+
+def test_health_reports_wal_lag_after_tailer_drives_event(tmp_path: Path) -> None:
+    import json
+
+    from engram.link.store import init_db
+    from engram.workers.wal_tailer import WalTailer
+
+    db = tmp_path / "anchors.sqlite"
+    init_db(db).close()
+    wal = tmp_path / "wal" / "write_log.jsonl"
+    wal.parent.mkdir(parents=True, exist_ok=True)
+    with wal.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"op": "add_drawer", "drawer_id": "D0"}) + "\n")
+
+    async def run() -> None:
+        tailer = WalTailer(wal_path=wal, db_path=db, poll_interval_s=0.01)
+        await tailer._tick_once()
+
+        registry = ToolRegistry()
+        register_engram_tools(registry, db, supervisor=None)
+        spec = registry.get("engram.health")
+        payload = await spec.handler({})  # type: ignore[union-attr]
+        lag = payload["result"]["upstreams"]["mempalace"].get("wal_lag_seconds")
+        assert isinstance(lag, (int, float))
+        assert 0 <= lag < 5
+
+    asyncio.run(run())

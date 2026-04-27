@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ from mcp.server.stdio import stdio_server
 
 from engram.config import Config
 from engram.events import HookBus
+from engram.router.cache import LRUCache
 from engram.tools.engram_ns import register_engram_tools
 from engram.tools.envelope import failure
 from engram.tools.mem_add_anchor import (
@@ -31,6 +33,7 @@ from engram.tools.write_hooks import (
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor, specs_from_config
 from engram.workers.scheduler import ReconcilerScheduler
+from engram.workers.wal_tailer import WalTailer
 
 log = logging.getLogger("engram.server")
 
@@ -65,10 +68,11 @@ def build_registry(
     workspace: Path,
     proxies: list[ProxyBinding] | None = None,
     supervisor: Supervisor | None = None,
+    cache: LRUCache | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     anchor_db = workspace / config.anchors.db_path
-    register_engram_tools(registry, anchor_db, supervisor=supervisor)
+    register_engram_tools(registry, anchor_db, supervisor=supervisor, cache=cache)
     for binding in proxies or []:
         register_proxy(
             registry=registry,
@@ -177,12 +181,16 @@ async def _run(workspace: Path, enable_upstreams: bool) -> None:
     config = load_config(workspace)
     specs = specs_from_config(config) if enable_upstreams else []
     bus = HookBus()
+    anchor_db = workspace / config.anchors.db_path
     async with Supervisor(specs=specs, workspace_root=str(workspace)) as supervisor:
+        cache = LRUCache(max_entries=config.router.cache.max_entries)
+        cache.subscribe_to(bus)
         registry = build_registry(
             config,
             workspace,
-            proxies=_bindings_for(supervisor, workspace / config.anchors.db_path, bus=bus),
+            proxies=_bindings_for(supervisor, anchor_db, bus=bus),
             supervisor=supervisor,
+            cache=cache,
         )
         server = build_server(registry)
         log.info(
@@ -190,7 +198,6 @@ async def _run(workspace: Path, enable_upstreams: bool) -> None:
             len(registry),
             len(supervisor.clients),
         )
-        anchor_db = workspace / config.anchors.db_path
         mempalace_client = supervisor.get("mempalace")
 
         async def drawer_lookup(drawer_id: str):
@@ -220,12 +227,28 @@ async def _run(workspace: Path, enable_upstreams: bool) -> None:
             interval_hours=float(config.anchors.reconcile_interval_hours),
         )
         scheduler.start()
+
+        wal_path = Path(os.path.expanduser(config.upstreams.mempalace.wal_path))
+        wal_tailer = WalTailer(
+            wal_path=wal_path,
+            db_path=anchor_db,
+            poll_interval_s=config.anchors.wal_tailer_poll_ms / 1000.0,
+        )
+        wal_task = asyncio.create_task(wal_tailer.run(), name="wal_tailer")
+
         try:
             async with stdio_server() as (read_stream, write_stream):
                 await server.run(
                     read_stream, write_stream, server.create_initialization_options()
                 )
         finally:
+            wal_tailer.stop()
+            try:
+                await asyncio.wait_for(wal_task, timeout=2.0)
+            except TimeoutError:
+                wal_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wal_task
             await scheduler.stop()
 
 

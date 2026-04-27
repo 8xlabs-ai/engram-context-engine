@@ -77,7 +77,7 @@ async def _enrich_chunks(
     try:
         for chunk in chunks:
             enriched = dict(chunk)
-            enriched["enclosing_symbol"] = await _resolve(conn, serena, chunk)
+            enriched["enclosing_symbol"] = await resolve_chunk_symbol(conn, serena, chunk)
             out.append(enriched)
     finally:
         if conn is not None:
@@ -85,7 +85,15 @@ async def _enrich_chunks(
     return out
 
 
-async def _resolve(conn, serena: UpstreamClient | None, chunk: dict[str, Any]) -> dict[str, Any] | None:
+async def resolve_chunk_symbol(
+    conn, serena: UpstreamClient | None, chunk: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Resolve a chunk's enclosing symbol via the anchor cache, then Serena.
+
+    Used both by the `vec.search` post-processor and `engram.where_does_decision_apply`
+    to populate `enclosing_symbol` from a chunk's line range — never from a
+    free-text query term.
+    """
     rel = chunk.get("relativePath") or chunk.get("relative_path")
     start = chunk.get("startLine") or chunk.get("start_line")
     end = chunk.get("endLine") or chunk.get("end_line")

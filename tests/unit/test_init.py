@@ -18,6 +18,8 @@ EXPECTED_TABLES = {
     "anchors_memory_chunk",
     "symbol_history",
     "meta",
+    "change_log",
+    "dirty_files",
 }
 EXPECTED_UNIQUE_PARTIAL = "idx_symbols_current_identity"
 EXPECTED_UNIQUE_ANCHOR_INDICES = {
@@ -45,7 +47,7 @@ def test_init_db_creates_schema(tmp_path: Path) -> None:
         assert EXPECTED_TABLES.issubset(tables)
 
         user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert user_version == 1
+        assert user_version == 2
 
         indices = {
             row[0]
@@ -63,6 +65,7 @@ def test_init_db_creates_schema(tmp_path: Path) -> None:
             "mempalace_wal_cursor",
             "last_reconcile_at",
             "claude_context_index_generation",
+            "cc_hook_inbox_cursor",
         }.issubset(seeded_keys)
     finally:
         conn.close()

@@ -163,7 +163,7 @@ v1 foundation complete + post-archive hardening (LICENSE, Serena warm-up, mem.se
 One command does prereq checks, venv, pip, npm, compose, ollama model pull, `engram init`, config patch, and `engram smoke-test`:
 
 ```bash
-git clone <repo> && cd engram
+git clone git@github.com:8xlabs-ai/engram-context-engine.git engram && cd engram
 ./setup.sh --workspace /path/to/your/repo
 ```
 
@@ -202,7 +202,7 @@ After it finishes, register `engram-mcp` with your agent client — see §7. If 
 ## 2. Install
 
 ```bash
-git clone <repo>
+git clone git@github.com:8xlabs-ai/engram-context-engine.git engram
 cd engram
 
 python3.13 -m venv .venv
@@ -451,11 +451,11 @@ All responses follow `{result, meta}` (success) or `{error: {code, message, deta
 > Run MemPalace's fact_checker against a candidate text and surface contradictions.
 > Use when you're about to write a memory and want to catch conflicts before it lands.
 
-**Inputs:** `{text, wing?}`.
+**Inputs:** `{text, palace_path?}`. `palace_path` overrides MemPalace's default palace location and is forwarded as the `--palace` arg to the subprocess fallback / `palace_path=` kwarg in-process.
 
-**Output:** `{issues: [...]}` (shape from MemPalace's `fact_checker.check_text`).
+**Output:** `{issues: [...]}` (shape from MemPalace's `fact_checker.check_text`). Empty list means "no contradictions" — distinct from `fact-checker-unavailable`.
 
-**Errors:** `invalid-input`, `fact-checker-unavailable` (when neither in-process import nor `python -m mempalace.fact_checker` subprocess can be loaded).
+**Errors:** `invalid-input`, `fact-checker-unavailable` (when neither in-process import nor `python -m mempalace.fact_checker --stdin` subprocess can be loaded). The CLI exits 1 with JSON when contradictions are found and 0 with a plain "No contradictions found." line otherwise; engram normalizes both into the structured envelope.
 
 ### `engram.reconcile`
 
@@ -540,6 +540,8 @@ systemctl --user enable --now engram.service
 | (HEAD-3)  | `ReconcilerScheduler` runs `reconcile(scope=all)` every `reconcile_interval_hours` (default 24, clamped to ≥60s). Records `meta.last_reconcile_at`. Closes original task 4.5.                                                                           |
 | (HEAD-2)  | In-process hook bus (`src/engram/events.py`); LRU cache subscribes and evicts on `symbol.renamed` / `symbol.tombstoned` / `file.replaced`. Closes original task 3.7.                                                                                    |
 | (HEAD-1)  | `make_file_edit_interceptor` wraps Serena's eight file-edit tools (`replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_content`, `insert_at_line`, `delete_lines`, `replace_lines`, `create_text_file`) and emits `EVENT_FILE_REPLACED` on success — LRU cache drops entries scoped to the touched path. Closes original task 2.7. |
+| (HEAD-1)  | D1 wiring: `WalTailer` and `LRUCache` are now instantiated and started inside `_run()` (`src/engram/server.py`). `engram.health` reports a real `upstreams.mempalace.wal_lag_seconds` (was always missing because nothing updated `meta.mempalace_wal_last_event_at`). Warm `engram.why` calls now short-circuit through the LRU cache; eviction is wired via `LRUCache.subscribe_to(bus)` on `symbol.renamed` / `symbol.tombstoned` / `file.replaced`. |
+| (HEAD)    | D7 fix: `WalTailer` cursor widened to `(inode, byte_offset)` (`src/engram/workers/wal_tailer.py`). Inode change ⇒ silent rotation reset (new file content is genuinely new). Same inode + smaller size ⇒ loud warning "truncated in place — handlers must be idempotent". Previously every size shrink reset cursor to 0 unconditionally, conflating real rotations with anomalies. |
 
 
 All four MCP-naming/env bugs caught only by real-upstream integration; pure unit tests would not have surfaced them.

@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+from importlib.resources import files
 
 from click.testing import CliRunner
 
 from engram.cli import main
 
-REPO = Path(__file__).parents[2]
-
 
 def test_plist_template_shipped() -> None:
-    plist = REPO / "deploy/units/ai.engram.plist"
-    assert plist.exists()
+    plist = files("engram").joinpath("deploy/units/ai.engram.plist")
     text = plist.read_text(encoding="utf-8")
     assert "<key>Label</key>" in text
     assert "ai.engram" in text
@@ -20,8 +17,7 @@ def test_plist_template_shipped() -> None:
 
 
 def test_systemd_unit_template_shipped() -> None:
-    unit = REPO / "deploy/units/engram.service"
-    assert unit.exists()
+    unit = files("engram").joinpath("deploy/units/engram.service")
     text = unit.read_text(encoding="utf-8")
     assert "[Service]" in text
     assert "ExecStart=" in text

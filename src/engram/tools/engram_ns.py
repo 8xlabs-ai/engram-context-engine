@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from engram import __version__
+from engram.events import HookBus
 from engram.link.store import (
     get_symbol,
     history_for,
@@ -18,9 +19,12 @@ from engram.link.store import (
     upsert_anchor_symbol_memory,
     upsert_symbol,
 )
+from engram.router.cache import LRUCache
 from engram.router.classifier import classify_query
+from engram.router.dispatcher import RouterDispatcher
 from engram.tools.contradicts import register_contradicts
 from engram.tools.envelope import failure, latency_meter, success
+from engram.tools.notify import register_notify_tools
 from engram.tools.registry import ToolRegistry, ToolSpec
 from engram.upstream.client import UpstreamClient
 from engram.upstream.supervisor import Supervisor
@@ -78,6 +82,9 @@ SymbolLookup = Callable[[str, str], Awaitable[dict[str, Any] | None]]
 MemSearch = Callable[[str], Awaitable[list[dict[str, Any]]]]
 KgQuery = Callable[[str], Awaitable[list[dict[str, Any]]]]
 VecSearch = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
+ChunkSymbolResolver = Callable[
+    [dict[str, Any]], Awaitable[dict[str, Any] | None]
+]
 
 
 def register_engram_tools(
@@ -89,18 +96,28 @@ def register_engram_tools(
     mem_search: MemSearch | None = None,
     kg_query: KgQuery | None = None,
     vec_search: VecSearch | None = None,
+    chunk_symbol_resolver: ChunkSymbolResolver | None = None,
+    bus: HookBus | None = None,
+    cache: LRUCache | None = None,
 ) -> None:
     """Register all engram.* tools.
 
     `drawer_lookup`, `symbol_lookup`, `mem_search`, `kg_query`, and `vec_search`
     are override hooks used by tests; in production the closures derived from
-    `supervisor` are used.
+    `supervisor` are used. `bus` enables notify tools that publish into the
+    HookBus; if absent, those tools are not registered. `cache`, when supplied,
+    short-circuits `engram.why` on warm queries; eviction is wired separately
+    via `LRUCache.subscribe_to(bus)`.
     """
+    workspace_root = anchor_db_path.parent.parent
     drawer_lookup = drawer_lookup or _default_drawer_lookup(supervisor)
     symbol_lookup = symbol_lookup or _default_symbol_lookup(supervisor)
     mem_search = mem_search or _default_mem_search(supervisor)
     kg_query = kg_query or _default_kg_query(supervisor)
-    vec_search = vec_search or _default_vec_search(supervisor)
+    vec_search = vec_search or _default_vec_search(supervisor, workspace_root)
+    chunk_symbol_resolver = chunk_symbol_resolver or _default_chunk_symbol_resolver(
+        supervisor, anchor_db_path
+    )
 
     _register_health(registry, anchor_db_path, supervisor)
     _register_anchor_memory_to_symbol(
@@ -114,15 +131,19 @@ def register_engram_tools(
         symbol_lookup=symbol_lookup,
         mem_search=mem_search,
         kg_query=kg_query,
+        vec_search=vec_search,
+        cache=cache,
     )
     _register_where_does_decision_apply(
         registry,
         kg_query=kg_query,
         vec_search=vec_search,
-        symbol_lookup=symbol_lookup,
+        chunk_symbol_resolver=chunk_symbol_resolver,
     )
     _register_reconcile(registry, anchor_db_path, drawer_lookup)
     register_contradicts(registry)
+    if bus is not None:
+        register_notify_tools(registry, anchor_db_path, bus)
 
 
 # -----------------------------------------------------------------------------
@@ -413,12 +434,22 @@ def _register_why(
     symbol_lookup: SymbolLookup,
     mem_search: MemSearch,
     kg_query: KgQuery,
+    vec_search: VecSearch,
+    cache: LRUCache | None = None,
 ) -> None:
+    dispatcher = RouterDispatcher(
+        vec_search=vec_search,
+        mem_search=mem_search,
+        kg_query=kg_query,
+        symbol_lookup=symbol_lookup,
+    )
+
     async def handler(args: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
             name_path = args.get("name_path")
             relative_path = args.get("relative_path")
             free_query = args.get("free_query")
+
             if not (isinstance(name_path, str) and name_path) and not (
                 isinstance(free_query, str) and free_query
             ):
@@ -428,42 +459,63 @@ def _register_why(
                     meta_extra={"latency_ms": m["latency_ms"]},
                 )
 
-            path = classify_query(
-                {"name_path": name_path, "query": free_query, "fusion": False}
-            )
+            # Preserve the symbol-not-found contract: when both name_path and
+            # relative_path are supplied, an unresolved symbol is a hard
+            # failure rather than a partial result.
+            if (
+                isinstance(name_path, str)
+                and name_path
+                and isinstance(relative_path, str)
+                and relative_path
+            ):
+                sym = await symbol_lookup(name_path, relative_path)
+                if sym is None:
+                    path = classify_query(
+                        {"name_path": name_path, "query": free_query}
+                    )
+                    return failure(
+                        "symbol-not-found",
+                        f"no symbol resolved for {name_path}@{relative_path}",
+                        meta_extra={
+                            "latency_ms": m["latency_ms"],
+                            "path_used": path,
+                        },
+                    )
 
-            result: dict[str, Any] = {
-                "symbol": None,
-                "memories": [],
-                "facts": [],
+            cache_key_args = {
+                "name_path": name_path,
+                "relative_path": relative_path,
+                "free_query": free_query,
             }
-
-            if isinstance(name_path, str) and name_path:
-                if isinstance(relative_path, str) and relative_path:
-                    sym = await symbol_lookup(name_path, relative_path)
-                    if sym is None:
-                        return failure(
-                            "symbol-not-found",
-                            f"no symbol resolved for {name_path}@{relative_path}",
-                            meta_extra={
-                                "latency_ms": m["latency_ms"],
-                                "path_used": path,
-                            },
-                        )
-                    result["symbol"] = sym
-                result["memories"] = await mem_search(name_path)
-                result["facts"] = await kg_query(name_path)
+            cached = cache.get("engram.why", cache_key_args) if cache else None
+            if cached is not None:
+                router_result = cached
             else:
-                # Free-query only: Path A/C. M2 minimum ships Path B fully;
-                # Path C fusion body is deferred until the router dispatcher
-                # (tasks 3.2–3.4) lands. Return an empty envelope with a meta
-                # warning so callers can still exercise the tool.
-                result["memories"] = await mem_search(str(free_query))
+                router_result = await dispatcher.dispatch(
+                    {
+                        "name_path": name_path,
+                        "relative_path": relative_path,
+                        "query": free_query,
+                    }
+                )
+                if cache is not None:
+                    cache.put("engram.why", cache_key_args, router_result)
 
-        return success(
-            result,
-            meta_extra={"latency_ms": m["latency_ms"], "path_used": path},
-        )
+        result = {
+            "symbol": router_result.symbol,
+            "memories": router_result.memories,
+            "facts": router_result.facts,
+            "chunks": router_result.chunks,
+            "fused": router_result.fused,
+        }
+        meta_extra = {
+            "latency_ms": m["latency_ms"],
+            "path_used": router_result.path_used,
+            "sources_used": router_result.sources_used,
+        }
+        if router_result.warnings:
+            meta_extra["warnings"] = router_result.warnings
+        return success(result, meta_extra=meta_extra)
 
     registry.register(
         ToolSpec(
@@ -548,7 +600,7 @@ def _register_where_does_decision_apply(
     *,
     kg_query: KgQuery,
     vec_search: VecSearch,
-    symbol_lookup: SymbolLookup,
+    chunk_symbol_resolver: ChunkSymbolResolver,
 ) -> None:
     async def handler(args: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
@@ -580,10 +632,11 @@ def _register_where_does_decision_apply(
                         continue
                     seen.add(sig)
                     enc = chunk.get("enclosing_symbol")
-                    if enc is None and isinstance(rel, str):
-                        enc = await symbol_lookup(
-                            chunk.get("symbol_name_path", term), rel
-                        )
+                    if enc is None:
+                        # Resolve from the chunk's line range, NOT from the
+                        # decision-entity term — Serena would never recognize
+                        # `gdpr_retention_30d` as a name_path.
+                        enc = await chunk_symbol_resolver(chunk)
                     implementations.append({"chunk": chunk, "symbol": enc})
                     if len(implementations) >= limit:
                         break
@@ -654,6 +707,23 @@ def _default_drawer_lookup(supervisor: Supervisor | None) -> DrawerLookup:
     return lookup
 
 
+def _default_chunk_symbol_resolver(
+    supervisor: Supervisor | None, anchor_db_path: Path
+) -> ChunkSymbolResolver:
+    from engram.tools.vec_enrich import resolve_chunk_symbol
+
+    async def resolve(chunk: dict[str, Any]) -> dict[str, Any] | None:
+        conn = open_db(anchor_db_path) if anchor_db_path.exists() else None
+        client = supervisor.get("serena") if supervisor is not None else None
+        try:
+            return await resolve_chunk_symbol(conn, client, chunk)
+        finally:
+            if conn is not None:
+                conn.close()
+
+    return resolve
+
+
 def _default_symbol_lookup(supervisor: Supervisor | None) -> SymbolLookup:
     async def lookup(name_path: str, relative_path: str) -> dict[str, Any] | None:
         if supervisor is None:
@@ -675,16 +745,19 @@ def _default_symbol_lookup(supervisor: Supervisor | None) -> SymbolLookup:
     return lookup
 
 
-def _default_vec_search(supervisor: Supervisor | None) -> VecSearch:
+def _default_vec_search(
+    supervisor: Supervisor | None, workspace_root: Path | None
+) -> VecSearch:
     async def search(query: str, limit: int) -> list[dict[str, Any]]:
-        if supervisor is None:
+        if supervisor is None or workspace_root is None:
             return []
         client = supervisor.get("claude_context")
         if client is None:
             return []
         try:
             result = await client.call_tool(
-                "search_code", {"query": query, "limit": limit}
+                "search_code",
+                {"path": str(workspace_root), "query": query, "limit": limit},
             )
         except Exception:  # noqa: BLE001
             return []

@@ -15,6 +15,7 @@ from engram.link.store import meta_get, meta_set, open_db
 log = logging.getLogger("engram.wal_tailer")
 
 META_CURSOR_KEY = "mempalace_wal_cursor"
+META_INODE_KEY = "mempalace_wal_inode"
 META_LAST_EVENT_AT = "mempalace_wal_last_event_at"
 
 
@@ -74,14 +75,40 @@ class WalTailer:
             return
         conn = open_db(self.db_path)
         try:
+            stat = self.wal_path.stat()
+            current_inode = int(stat.st_ino)
+            size = int(stat.st_size)
+            stored_inode_raw = meta_get(conn, META_INODE_KEY)
+            stored_inode = int(stored_inode_raw) if stored_inode_raw else None
             cursor = int(meta_get(conn, META_CURSOR_KEY) or "0")
-            size = self.wal_path.stat().st_size
-            if size < cursor:
-                # WAL was rotated / truncated. Reset to 0.
-                log.warning(
-                    "wal shrank from %d to %d; resetting cursor", cursor, size
+
+            if stored_inode is None:
+                # First run on this db: seed inode, keep cursor as-is.
+                meta_set(conn, META_INODE_KEY, str(current_inode))
+            elif stored_inode != current_inode:
+                # File was rotated (logrotate/unlink+recreate). New file = new
+                # content; replay from 0 doesn't double-dispatch already-seen
+                # events because the bytes those events lived in are gone.
+                log.info(
+                    "wal rotated (inode %d -> %d); resetting cursor",
+                    stored_inode,
+                    current_inode,
                 )
                 cursor = 0
+                meta_set(conn, META_INODE_KEY, str(current_inode))
+            elif size < cursor:
+                # Same inode but size shrank — in-place truncation. Real
+                # anomaly. Reset and rely on the at-least-once / idempotent-
+                # handler contract documented in engram.events.
+                log.warning(
+                    "wal truncated in place (size %d < cursor %d, inode %d); "
+                    "resetting cursor — handlers must be idempotent",
+                    size,
+                    cursor,
+                    current_inode,
+                )
+                cursor = 0
+
             if size == cursor:
                 return
             new_cursor = await self._drain_from(conn, cursor)

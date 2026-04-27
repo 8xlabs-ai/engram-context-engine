@@ -10,6 +10,7 @@ META_SEEDS: tuple[tuple[str, str], ...] = (
     ("mempalace_wal_cursor", "0"),
     ("last_reconcile_at", "1970-01-01T00:00:00Z"),
     ("claude_context_index_generation", "0"),
+    ("cc_hook_inbox_cursor", "0"),
 )
 
 
@@ -270,6 +271,86 @@ def memory_anchors_for_symbol(
         "SELECT anchor_id, drawer_id, wing, room, created_by, confidence, created_at "
         "FROM anchors_symbol_memory WHERE symbol_id = ? ORDER BY anchor_id ASC",
         (symbol_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# -----------------------------------------------------------------------------
+# change_log + dirty_files (v2)
+# -----------------------------------------------------------------------------
+
+
+def insert_change_log(
+    conn: sqlite3.Connection,
+    *,
+    relative_path: str,
+    change_type: str,
+    source: str,
+    tool: str | None = None,
+    agent: str | None = None,
+    conversation_id: str | None = None,
+    tool_use_id: str | None = None,
+    ts: str | None = None,
+) -> int:
+    if ts is None:
+        cursor = conn.execute(
+            "INSERT INTO change_log "
+            "(relative_path, change_type, tool, agent, conversation_id, "
+            "tool_use_id, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (relative_path, change_type, tool, agent, conversation_id,
+             tool_use_id, source),
+        )
+    else:
+        cursor = conn.execute(
+            "INSERT INTO change_log "
+            "(ts, relative_path, change_type, tool, agent, conversation_id, "
+            "tool_use_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (ts, relative_path, change_type, tool, agent, conversation_id,
+             tool_use_id, source),
+        )
+    return int(cursor.lastrowid)
+
+
+def upsert_dirty_file(conn: sqlite3.Connection, relative_path: str) -> None:
+    conn.execute(
+        "INSERT INTO dirty_files (relative_path) VALUES (?) "
+        "ON CONFLICT(relative_path) DO UPDATE SET "
+        "last_dirty_at = datetime('now')",
+        (relative_path,),
+    )
+
+
+def dirty_file_paths(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT relative_path FROM dirty_files ORDER BY first_dirty_at ASC"
+    ).fetchall()
+    return [str(r["relative_path"]) for r in rows]
+
+
+def clear_dirty_file(conn: sqlite3.Connection, relative_path: str) -> None:
+    conn.execute(
+        "DELETE FROM dirty_files WHERE relative_path = ?", (relative_path,)
+    )
+
+
+def mark_reindexed(conn: sqlite3.Connection, relative_path: str) -> int:
+    cursor = conn.execute(
+        "UPDATE change_log SET reindex_state = 'reindexed' "
+        "WHERE relative_path = ? AND reindex_state = 'pending'",
+        (relative_path,),
+    )
+    return int(cursor.rowcount or 0)
+
+
+def changes_for_conversation(
+    conn: sqlite3.Connection, conversation_id: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT change_id, ts, relative_path, change_type, tool, agent, "
+        "conversation_id, tool_use_id, source, reindex_state "
+        "FROM change_log WHERE conversation_id = ? "
+        "ORDER BY change_id DESC LIMIT ?",
+        (conversation_id, int(limit)),
     ).fetchall()
     return [dict(r) for r in rows]
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Engram MCP server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/engram-mcp
+Environment=ENGRAM_WORKSPACE=/absolute/path/to/your/workspace
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

@@ -5,10 +5,16 @@ into its write path (02 §5). Engram calls it directly:
 
 - Preferred: in-process import `from mempalace import fact_checker`. Cheap
   when MemPalace is already a pip dep of Engram.
-- Fallback: subprocess `python -m mempalace.fact_checker "<text>"` and
-  parse stdout.
+- Fallback: subprocess `python -m mempalace.fact_checker --stdin` and
+  read stdout. The CLI is a top-level package module, so `-m` works
+  without a `__main__.py`. Its semantics: exit 1 + JSON on stdout when
+  contradictions are found; exit 0 + the literal `"No contradictions
+  found."` line when none. Both are valid successful invocations.
 
 If neither path works, return error-code `fact-checker-unavailable`.
+Only `palace_path` is forwarded as an extra kwarg; other extras are
+ignored because `check_text(text, palace_path=None, config=None)` does
+not accept them.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ def register_contradicts(registry: ToolRegistry, check: CheckText | None = None)
     async def handler(args: dict[str, Any]) -> dict[str, Any]:
         with latency_meter() as m:
             text = args.get("text")
-            wing = args.get("wing")
+            palace_path = args.get("palace_path")
             if not isinstance(text, str) or not text:
                 return failure(
                     "invalid-input",
@@ -48,8 +54,8 @@ def register_contradicts(registry: ToolRegistry, check: CheckText | None = None)
                     meta_extra={"latency_ms": m["latency_ms"]},
                 )
             extras: dict[str, Any] = {}
-            if isinstance(wing, str) and wing:
-                extras["wing"] = wing
+            if isinstance(palace_path, str) and palace_path:
+                extras["palace_path"] = palace_path
             try:
                 issues = await checker(text, extras)
             except Exception as exc:  # noqa: BLE001
@@ -78,7 +84,7 @@ def register_contradicts(registry: ToolRegistry, check: CheckText | None = None)
                 "type": "object",
                 "properties": {
                     "text": {"type": "string"},
-                    "wing": {"type": "string"},
+                    "palace_path": {"type": "string"},
                 },
                 "required": ["text"],
                 "additionalProperties": False,
@@ -97,19 +103,21 @@ async def _default_check_text(
     return await _call_subprocess(text, extras)
 
 
+_KNOWN_KWARGS = ("palace_path",)
+
+
+def _filter_kwargs(extras: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in extras.items() if k in _KNOWN_KWARGS and v is not None}
+
+
 def _call_in_process(text: str, extras: dict[str, Any]) -> list[dict[str, Any]] | None:
     try:
         from mempalace import fact_checker  # type: ignore[attr-defined]
     except Exception:
         return None
+    kwargs = _filter_kwargs(extras)
     try:
-        issues = fact_checker.check_text(text, **extras)
-    except TypeError:
-        # Older MemPalace signatures may not accept kwargs.
-        try:
-            issues = fact_checker.check_text(text)
-        except Exception:
-            return None
+        issues = fact_checker.check_text(text, **kwargs)
     except Exception:
         return None
     return _normalize(issues)
@@ -117,23 +125,33 @@ def _call_in_process(text: str, extras: dict[str, Any]) -> list[dict[str, Any]] 
 
 async def _call_subprocess(text: str, extras: dict[str, Any]) -> list[dict[str, Any]] | None:
     loop = asyncio.get_running_loop()
+    palace_path = extras.get("palace_path")
+
     def run() -> list[dict[str, Any]] | None:
+        cmd = [sys.executable, "-m", "mempalace.fact_checker", "--stdin"]
+        if isinstance(palace_path, str) and palace_path:
+            cmd.extend(["--palace", palace_path])
         try:
             completed = subprocess.run(
-                [sys.executable, "-m", "mempalace.fact_checker", text],
+                cmd,
+                input=text,
                 capture_output=True,
                 text=True,
                 timeout=10,
             )
         except (subprocess.SubprocessError, OSError):
             return None
-        if completed.returncode != 0:
-            return None
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            return None
-        return _normalize(payload)
+        # fact_checker.py exits 0 with a plain-text "No contradictions
+        # found." line, or exits 1 with a JSON list of issues on stdout.
+        if completed.returncode == 0:
+            return []
+        if completed.returncode == 1:
+            try:
+                payload = json.loads(completed.stdout)
+            except json.JSONDecodeError:
+                return None
+            return _normalize(payload)
+        return None
 
     return await loop.run_in_executor(None, run)
 

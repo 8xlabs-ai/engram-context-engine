@@ -230,14 +230,10 @@ def supervisor_show_cmd(platform_name: str | None) -> None:
 
     chosen = platform_name or ("darwin" if sys.platform == "darwin" else "linux")
     filename = "ai.engram.plist" if chosen == "darwin" else "engram.service"
+    resource = files("engram").joinpath(f"deploy/units/{filename}")
     try:
-        resource = files("engram").joinpath(f"../deploy/units/{filename}")
-        # Fall back to repo path when running from source
-        path = Path(str(resource)).resolve()
-        if not path.exists():
-            path = Path(__file__).parents[2] / "deploy" / "units" / filename
-        click.echo(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+        click.echo(resource.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError):
         _fail(f"unit template not bundled: {filename}")
 
 

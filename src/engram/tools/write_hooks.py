@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -220,7 +221,14 @@ def make_file_edit_interceptor(
         if bus is not None and isinstance(relative_path, str) and relative_path:
             await bus.publish(
                 EVENT_FILE_REPLACED,
-                {"relative_path": relative_path, "tool": upstream_tool},
+                {
+                    "relative_path": relative_path,
+                    "change_type": "edit",
+                    "source": "engram_write_hook",
+                    "tool": upstream_tool,
+                    "agent": "engram",
+                    "ts": time.time(),
+                },
             )
         return success(
             _structured(result),

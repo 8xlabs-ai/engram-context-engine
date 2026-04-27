@@ -22,6 +22,20 @@ class Anchors(BaseModel):
     db_path: str = ".engram/anchors.sqlite"
     reconcile_interval_hours: int = 24
     wal_tailer_poll_ms: int = 500
+    dirty_sweep_interval_seconds: int = 60
+
+
+class HookInbox(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = ".engram/inbox/hook_events.jsonl"
+    poll_ms: int = 500
+
+
+class CCHookInstall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
 
 
 class SerenaUpstream(BaseModel):
@@ -109,6 +123,8 @@ class Config(BaseModel):
     upstreams: Upstreams = Field(default_factory=Upstreams)
     router: Router = Field(default_factory=Router)
     logging: Logging = Field(default_factory=Logging)
+    hook_inbox: HookInbox = Field(default_factory=HookInbox)
+    cc_hook_install: CCHookInstall = Field(default_factory=CCHookInstall)
 
     @classmethod
     def load(cls, path: Path) -> Config:
